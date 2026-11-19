@@ -35,7 +35,12 @@ class HandsFree(
     private val _engineLabel = MutableStateFlow<String?>(null)
     val engineLabel: StateFlow<String?> = _engineLabel.asStateFlow()
 
+    private val _lastHeard = MutableStateFlow("")
+    /** Live diagnostics for Settings: the last thing the wake engine decoded. */
+    val lastHeard: StateFlow<String> = _lastHeard.asStateFlow()
+
     private var engine: WakeEngine? = null
+    private var voskFailures = 0
     private var vosk: VoskWakeEngine? = null
     private var enabled = false
     private var job: Job? = null
@@ -76,15 +81,21 @@ class HandsFree(
             engine = e
             _engineLabel.value = e.label
             if (!enabled) return@launch
+            e.onHeard = { _lastHeard.value = it }
+            e.onFailure = {
+                if (e is VoskWakeEngine) voskFailures++
+                // Mic was busy or errored (call, camera, another recorder): retry shortly.
+                if (enabled && _state.value == State.SLEEPING) scope.launch { delay(3_000); if (enabled && _state.value == State.SLEEPING) sleep() }
+            }
             _state.value = State.SLEEPING
-            e.start { remainder -> wake(remainder) }
+            e.start { remainder -> voskFailures = 0; _lastHeard.value = "✓ WAKE"; wake(remainder) }
         }
     }
 
     private suspend fun pickEngine(): WakeEngine {
         if (!models.ready) models.installFromAssets()
-        if (models.ready) {
-            val v = vosk ?: VoskWakeEngine(models.dir).also { vosk = it }
+        if (models.ready && voskFailures < 3) {
+            val v = vosk ?: VoskWakeEngine(models.dir) { WakeSensitivity.of(prefs.wakeSensitivity.value) }.also { vosk = it }
             if (v.prepare()) return v
         }
         return engine as? RecognizerLoopWakeEngine ?: RecognizerLoopWakeEngine(context)

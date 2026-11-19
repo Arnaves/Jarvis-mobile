@@ -89,6 +89,8 @@ fun SettingsScreen(
     val hfState by app.handsFree.state.collectAsState()
     val engine by app.handsFree.engineLabel.collectAsState()
     val wakeProgress by app.handsFree.models.progress.collectAsState()
+    val lastHeard by app.handsFree.lastHeard.collectAsState()
+    val sensitivity by prefs.wakeSensitivity.collectAsState()
     var wakeError by remember { mutableStateOf<String?>(null) }
     val tasks by app.tasks.tasks.collectAsState()
     val places by app.tasks.places.collectAsState()
@@ -195,6 +197,30 @@ fun SettingsScreen(
                     "STATUS · ${hfState.name}" + (engine?.let { " · ${it.uppercase()}" } ?: ""),
                     style = HudType.label, color = if (hfState == com.jarvis.launcher.ai.HandsFree.State.OFF) hud.textDim else hud.secondary,
                 )
+                Spacer(Modifier.height(10.dp))
+                Text("WAKE SENSITIVITY", style = HudType.label, color = hud.textDim)
+                Spacer(Modifier.height(6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.jarvis.launcher.ai.WakeSensitivity.entries.forEach { ws ->
+                        Chip(ws.label, selected = sensitivity == ws.name) { prefs.setWakeSensitivity(ws.name) }
+                    }
+                }
+                Text(
+                    "Not responding? Choose Sensitive. Waking up by itself? Choose Strict.",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
+                if (handsFree) {
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.fillMaxWidth().hudFrame(hud, cut = 6.dp, fillAlpha = 0.05f).padding(10.dp)) {
+                        Column {
+                            Text("LIVE · WHAT JARVIS HEARS", style = HudType.label, color = hud.textDim)
+                            Text(
+                                lastHeard.ifBlank { "Say \"Hey JARVIS\"…" },
+                                style = HudType.data, color = if (lastHeard.startsWith("✓")) hud.secondary else hud.text, maxLines = 2,
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 if (app.handsFree.models.ready) {
                     Text("WAKE ENGINE · OFFLINE KEYWORD SPOTTER INSTALLED", style = HudType.label, color = hud.secondary)

@@ -22,7 +22,16 @@ class WakeDecisionTest {
     @Test fun clearHeyJarvis() = assertTrue(WakeDecision.isWake(r("hey" to 0.97, "jarvis" to 0.99)))
     @Test fun okJarvisInsideSentence() = assertTrue(WakeDecision.isWake(r("so" to 0.6, "okay" to 0.9, "jarvis" to 0.95)))
     @Test fun lowConfidenceRejected() = assertFalse(WakeDecision.isWake(r("hey" to 0.9, "jarvis" to 0.55)))
-    @Test fun jarvisAloneRejected() = assertFalse(WakeDecision.isWake(r("jarvis" to 1.0)))
+    @Test fun lowConfidenceAcceptedWhenSensitive() =
+        assertTrue(WakeDecision.isWake(r("hey" to 0.9, "jarvis" to 0.55), com.jarvis.launcher.ai.WakeSensitivity.HIGH))
+    @Test fun accentedMediumConfidence() = assertTrue(WakeDecision.isWake(r("hey" to 0.8, "jarvis" to 0.74)))
+    @Test fun jarvisAloneConfident() = assertTrue(WakeDecision.isWake(r("jarvis" to 0.95)))
+    @Test fun jarvisAloneRejectedWhenStrict() =
+        assertFalse(WakeDecision.isWake(r("jarvis" to 0.95), com.jarvis.launcher.ai.WakeSensitivity.LOW))
+    @Test fun jarvisAloneInLongSpeechRejected() =
+        assertFalse(WakeDecision.isWake(r("so" to 0.9, "the" to 0.9, "jarvis" to 0.95, "is" to 0.9)))
+    @Test fun partialPhrase() = assertTrue(WakeDecision.partialHasPhrase("""{"partial":"hey jarvis"}"""))
+    @Test fun partialAloneIgnored() = assertFalse(WakeDecision.partialHasPhrase("""{"partial":"jarvis"}"""))
     @Test fun noiseRejected() = assertFalse(WakeDecision.isWake("""{"text":""}"""))
     @Test fun decoyRejected() = assertFalse(WakeDecision.isWake(r("hey" to 0.9, "travis" to 0.99)))
     @Test fun garbage() = assertFalse(WakeDecision.isWake("not json"))

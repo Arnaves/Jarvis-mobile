@@ -47,6 +47,10 @@ class Prefs(context: Context) {
     fun setLockScreen(v: Boolean) { _lockScreen.value = v; sp.edit().putBoolean(KEY_LOCK, v).apply() }
     fun setWebEnabled(v: Boolean) { _web.value = v; sp.edit().putBoolean(KEY_WEB, v).apply() }
 
+    private val _wakeSensitivity = MutableStateFlow(sp.getString("wake_sens", "NORMAL")!!)
+    val wakeSensitivity: StateFlow<String> = _wakeSensitivity.asStateFlow()
+    fun setWakeSensitivity(v: String) { _wakeSensitivity.value = v; sp.edit().putString("wake_sens", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }
