@@ -45,6 +45,10 @@ android {
             all { it.systemProperty("roborazzi.test.record", "true") }
         }
     }
+    androidResources {
+        // Vosk reads its model files from disk after copying; keep them uncompressed for a fast first copy.
+        noCompress += listOf("mdl", "fst", "int", "conf", "mat")
+    }
     packaging {
         jniLibs { useLegacyPackaging = false }
     }
@@ -67,6 +71,10 @@ dependencies {
 
     // On-device LLM runtime (Gemma / Qwen / Phi .task models, fully offline)
     implementation("com.google.mediapipe:tasks-genai:0.10.27")
+
+    // Offline, always-on "Hey JARVIS" wake-word detection
+    implementation("com.alphacephei:vosk-android:0.3.47") { exclude(group = "net.java.dev.jna") }
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.compose.ui:ui-tooling-preview")

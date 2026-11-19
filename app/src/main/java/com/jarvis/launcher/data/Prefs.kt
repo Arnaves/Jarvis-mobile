@@ -34,6 +34,19 @@ class Prefs(context: Context) {
     private val _showSeconds = MutableStateFlow(sp.getBoolean(KEY_SECONDS, true))
     val showSeconds: StateFlow<Boolean> = _showSeconds.asStateFlow()
 
+    private val _handsFree = MutableStateFlow(sp.getBoolean(KEY_HANDSFREE, false))
+    val handsFree: StateFlow<Boolean> = _handsFree.asStateFlow()
+
+    private val _lockScreen = MutableStateFlow(sp.getBoolean(KEY_LOCK, false))
+    val lockScreen: StateFlow<Boolean> = _lockScreen.asStateFlow()
+
+    private val _web = MutableStateFlow(sp.getBoolean(KEY_WEB, true))
+    val webEnabled: StateFlow<Boolean> = _web.asStateFlow()
+
+    fun setHandsFree(v: Boolean) { _handsFree.value = v; sp.edit().putBoolean(KEY_HANDSFREE, v).apply() }
+    fun setLockScreen(v: Boolean) { _lockScreen.value = v; sp.edit().putBoolean(KEY_LOCK, v).apply() }
+    fun setWebEnabled(v: Boolean) { _web.value = v; sp.edit().putBoolean(KEY_WEB, v).apply() }
+
     private val _onboarded = MutableStateFlow(sp.getBoolean(KEY_ONBOARDED, false))
     val onboarded: StateFlow<Boolean> = _onboarded.asStateFlow()
 
@@ -80,5 +93,8 @@ class Prefs(context: Context) {
         private const val KEY_GPU = "gpu"
         private const val KEY_SECONDS = "seconds"
         private const val KEY_ONBOARDED = "onboarded"
+        private const val KEY_HANDSFREE = "handsfree"
+        private const val KEY_LOCK = "lockscreen"
+        private const val KEY_WEB = "web"
     }
 }

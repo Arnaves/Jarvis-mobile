@@ -82,6 +82,7 @@ fun HomeScreen(
     llm: LlmState,
     lastMessage: ChatMessage?,
     showSeconds: Boolean,
+    handsFree: Boolean = false,
     onCoreTap: () -> Unit,
     onCoreHold: () -> Unit,
     onOpenDrawer: () -> Unit,
@@ -114,7 +115,7 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             TopStatus(sys, llm, onOpenSettings)
             Spacer(Modifier.height(6.dp))
-            Clock(showSeconds, sys)
+            HudClock(showSeconds, sys)
 
             Spacer(Modifier.weight(1f))
 
@@ -143,7 +144,7 @@ fun HomeScreen(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            CoreCaption(mode, voice)
+            CoreCaption(mode, voice, handsFree)
 
             Spacer(Modifier.height(14.dp))
             ResponseTicker(lastMessage, voice, onOpenConsole)
@@ -202,7 +203,7 @@ private fun Blink(color: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun Clock(showSeconds: Boolean, sys: SystemSnapshot) {
+fun HudClock(showSeconds: Boolean, sys: SystemSnapshot, scale: Float = 1f) {
     val hud = LocalHud.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -218,7 +219,7 @@ private fun Clock(showSeconds: Boolean, sys: SystemSnapshot) {
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(hm, color = hud.text, fontSize = 68.sp, fontWeight = FontWeight.Thin, fontFamily = FontFamily.SansSerif, letterSpacing = 2.sp)
+            Text(hm, color = hud.text, fontSize = (68 * scale).sp, fontWeight = FontWeight.Thin, fontFamily = FontFamily.SansSerif, letterSpacing = 2.sp)
             if (showSeconds) {
                 Text(sec, color = hud.primary, fontFamily = HudMono, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp, bottom = 14.dp))
             }
@@ -251,13 +252,14 @@ private fun SideTelemetry(items: List<Pair<String, String>>, align: Alignment.Ho
 }
 
 @Composable
-private fun CoreCaption(mode: CoreMode, voice: VoiceState) {
+private fun CoreCaption(mode: CoreMode, voice: VoiceState, handsFree: Boolean) {
     val hud = LocalHud.current
     val text = when {
         voice.error != null -> voice.error.uppercase()
         mode == CoreMode.LISTENING -> "LISTENING…"
         mode == CoreMode.THINKING -> "PROCESSING…"
         mode == CoreMode.SPEAKING -> "TRANSMITTING"
+        handsFree -> "SAY “HEY JARVIS” · OR TAP THE CORE"
         else -> "TAP CORE TO SPEAK · HOLD FOR CONSOLE"
     }
     AnimatedContent(text, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) }, label = "cap") {

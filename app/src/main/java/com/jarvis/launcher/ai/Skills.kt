@@ -272,8 +272,9 @@ class Skills(
     }
 
     private fun search(q: String): Reply? {
-        val m = Regex("^(search|google|look up|search the web|search online|find online)( for| about)?\\s+(.+)$").find(q) ?: return null
-        val term = m.groupValues[3]
+        // Plain "search for X" is answered by WebKnowledge; these phrases explicitly ask for the browser.
+        val m = Regex("^(search the web|search online|open (a )?(browser|web) search|browse)( for| about)?\\s+(.+)$").find(q) ?: return null
+        val term = m.groupValues[5]
         return Reply("Searching the net for \"$term\".", leavesLauncher = true, action = { webSearch(term) })
     }
 

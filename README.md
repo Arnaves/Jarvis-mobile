@@ -2,6 +2,7 @@
 
 A sci-fi heads-up-display home screen for Android with an assistant that runs **entirely on your phone**.
 There's no cloud and no account, and your voice, chats, notes and the AI model never leave the device.
+Live internet lookups are optional; when one runs, only that question is sent.
 
 ## Features
 
@@ -15,6 +16,35 @@ There's no cloud and no account, and your voice, chats, notes and the AI model n
 - Boot sequence and first-run setup
 - Can be picked as the device's assist app (long-press home or power, depending on the device)
 
+**Hands-free: "Hey JARVIS"**
+- Say **"Hey JARVIS"** at any time: on the home screen, inside other apps, or with the screen off.
+  He replies **"Yes, sir?"** and listens for **5 seconds**. If you say nothing, he goes back to standby.
+- You can say it in one breath: *"Hey JARVIS, what's the weather in Tokyo?"*
+- Wake-word detection uses **Vosk**, which is offline, silent and low-power. The model is bundled in CI builds;
+  for local builds, install it in Settings with one tap. Until it's installed, JARVIS falls back to the system
+  recogniser, which may chime on some phones.
+- Runs as a foreground service with a "Stop listening" button in its notification.
+
+**Sci-fi lock screen**
+- Appears every time the screen turns on, and also when you wake JARVIS by voice while the phone is asleep.
+  The intro is a radar sweep and identity scan, followed by the live core, clock, power and memory gauges,
+  and voice control.
+- Swipe up and the core overloads and flashes white, then hands over to your normal PIN or fingerprint.
+  Biometric unlock plays the same exit animation.
+- Android doesn't allow third-party apps to replace the secure system lock, so JARVIS is drawn *over* it.
+  Your phone stays exactly as secure as before. This needs the "Display over other apps" permission.
+
+**Live internet knowledge (no API keys)**
+| Say… | Source |
+|---|---|
+| "what's the weather" / "will it rain in London tomorrow" | Open-Meteo |
+| "top headlines" / "news about Tesla" | Google News RSS |
+| "who was Ada Lovelace" / "look up black holes" / "why is the sky blue" | DuckDuckGo + Wikipedia |
+| "bitcoin price" | CoinGecko |
+| "convert 100 dollars to rupees" | open.er-api.com |
+
+When a neural core is loaded, fact lookups are fed to the LLM as grounding, so its answers are both current and conversational.
+
 **Assistant: works offline with no model installed**
 | Say… | It does |
 |---|---|
@@ -23,7 +53,7 @@ There's no cloud and no account, and your voice, chats, notes and the AI model n
 | "set a timer for 1 hour 30 minutes" / "alarm for 7:30 pm" | Clock app, no UI |
 | "flashlight on" / "torch off" | Camera torch |
 | "pause music" / "next track" / "volume 40 percent" / "mute" | Media and audio control |
-| "navigate to the airport" / "search for…" | Maps or the browser |
+| "navigate to the airport" / "search the web for…" | Maps or the browser |
 | "open wifi settings" / "bluetooth on" | Settings panels |
 | "what's 18% of 240" / "five times three plus two" | Offline calculator |
 | "remember I parked on level 3" / "what do you remember" | On-device memory |

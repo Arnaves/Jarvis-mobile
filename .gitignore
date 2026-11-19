@@ -9,3 +9,4 @@ captures/
 *.keystore
 *.jks
 app/screenshots/
+app/src/main/assets/vosk-model/

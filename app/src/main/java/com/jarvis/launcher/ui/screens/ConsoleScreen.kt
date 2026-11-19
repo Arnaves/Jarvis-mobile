@@ -67,8 +67,8 @@ import com.jarvis.launcher.ui.theme.HudType
 import com.jarvis.launcher.ui.theme.LocalHud
 
 private val suggestions = listOf(
-    "System status", "What time is it?", "Flashlight on", "Set a timer for 5 minutes",
-    "Open camera", "What's 18% of 240?", "Remember I parked on level 3", "Tell me a joke",
+    "What's the weather?", "Top headlines", "System status", "Set a timer for 5 minutes",
+    "Who is Ada Lovelace?", "Bitcoin price", "Convert 100 usd to eur", "Flashlight on", "Tell me a joke",
 )
 
 @Composable
@@ -225,6 +225,7 @@ private fun MessageBubble(m: ChatMessage, ghost: Boolean = false) {
                     when (m.source) {
                         ChatMessage.Source.NEURAL -> "JARVIS · NEURAL"
                         ChatMessage.Source.SYSTEM -> "JARVIS · SYSTEM"
+                        ChatMessage.Source.WEB -> "JARVIS · UPLINK"
                         else -> "JARVIS · COMMAND"
                     },
                     style = HudType.label.copy(fontSize = 8.sp), color = hud.textDim,

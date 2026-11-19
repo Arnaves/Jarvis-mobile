@@ -21,6 +21,13 @@ jobs:
       - name: Unit tests + UI screenshots (Robolectric)
         run: ./gradlew testDebugUnitTest --stacktrace
 
+      - name: Bundle offline wake-word model (Vosk, ~40 MB)
+        run: |
+          curl -fsSL -o /tmp/vosk.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          mkdir -p /tmp/vosk && unzip -q /tmp/vosk.zip -d /tmp/vosk
+          rm -rf app/src/main/assets/vosk-model && mkdir -p app/src/main/assets
+          mv /tmp/vosk/vosk-model-small-en-us-0.15 app/src/main/assets/vosk-model
+
       - name: Build APKs
         run: ./gradlew assembleDebug assembleRelease --stacktrace
 

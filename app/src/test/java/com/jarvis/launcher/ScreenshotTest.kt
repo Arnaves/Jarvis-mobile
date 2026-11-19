@@ -86,5 +86,13 @@ class ScreenshotTest {
         SettingsScreen(app, isDefaultLauncher = false, onSetDefault = {}, onImportModel = {}, onRequestPermission = {}, onClose = {})
     }
 
+    @Test fun lockScreen() = shot("lock_screen", ms = 2000) {
+        com.jarvis.launcher.ui.screens.LockScreen(
+            sys = sys, mode = CoreMode.IDLE, voice = VoiceState(),
+            lastMessage = ChatMessage(1, false, "Currently 14 degrees and partly cloudy. Today's range is 9 to 17."),
+            handsFree = true, showSeconds = true, unlockSignal = 0, onMic = {}, onUnlocked = {},
+        )
+    }
+
     @Test fun boot() = shot("boot", ms = 1200) { BootSequence {} }
 }

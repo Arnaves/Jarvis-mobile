@@ -2,6 +2,9 @@ package com.jarvis.launcher
 
 import android.app.Application
 import com.jarvis.launcher.ai.Assistant
+import com.jarvis.launcher.ai.HandsFree
+import com.jarvis.launcher.ai.WakeModelStore
+import com.jarvis.launcher.ai.WebKnowledge
 import com.jarvis.launcher.ai.LocalLlm
 import com.jarvis.launcher.ai.Skills
 import com.jarvis.launcher.ai.Speaker
@@ -25,6 +28,8 @@ class JarvisApp : Application() {
     lateinit var speaker: Speaker; private set
     lateinit var voice: VoiceInput; private set
     lateinit var assistant: Assistant; private set
+    lateinit var web: WebKnowledge; private set
+    lateinit var handsFree: HandsFree; private set
 
     override fun onCreate() {
         super.onCreate()
@@ -35,7 +40,9 @@ class JarvisApp : Application() {
         speaker = Speaker(this)
         voice = VoiceInput(this)
         val skills = Skills(this, apps, prefs, monitor)
-        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor)
+        web = WebKnowledge(this)
+        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web)
+        handsFree = HandsFree(this, voice, speaker, assistant, prefs, WakeModelStore(this))
 
         // Bring the neural core online in the background if a model is installed.
         val path = prefs.modelPath.value ?: llm.installedModels().firstOrNull()?.absolutePath

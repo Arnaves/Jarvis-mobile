@@ -55,13 +55,15 @@ class MainActivity : ComponentActivity() {
     private var pendingListen = false
     private var booted = false
 
-    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val granted = result[Manifest.permission.RECORD_AUDIO] ?: micGranted
         micGranted = granted
-        if (granted && pendingListen) app.assistant.listen()
+        if (granted && pendingListen) app.handsFree.manualListen()
+        com.jarvis.launcher.service.JarvisService.sync(this)
         pendingListen = false
     }
     private val genericPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) toast("Access granted. Try that again.")
+        if (granted) toast("Access granted.")
     }
     private val importModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) lifecycleScope.launch {
@@ -110,6 +112,7 @@ class MainActivity : ComponentActivity() {
         val llm by app.llm.state.collectAsStateWithLifecycle()
         val showSeconds by app.prefs.showSeconds.collectAsStateWithLifecycle()
         val onboarded by app.prefs.onboarded.collectAsStateWithLifecycle()
+        val handsFree by app.handsFree.state.collectAsStateWithLifecycle()
         var bootDone by remember { mutableStateOf(booted) }
 
         val dock: List<AppEntry> = remember(apps, pinned) {
@@ -135,6 +138,7 @@ class MainActivity : ComponentActivity() {
                 llm = llm,
                 lastMessage = messages.lastOrNull { !it.fromUser },
                 showSeconds = showSeconds,
+                handsFree = handsFree != com.jarvis.launcher.ai.HandsFree.State.OFF,
                 onCoreTap = { startListening() },
                 onCoreHold = { screen = Screen.CONSOLE },
                 onOpenDrawer = { screen = Screen.DRAWER },
@@ -176,7 +180,7 @@ class MainActivity : ComponentActivity() {
                     onSetDefault = { openHomeSettings() },
                     onImportModel = { importModel.launch(arrayOf("*/*")) },
                     onRequestPermission = { p ->
-                        if (p == Manifest.permission.RECORD_AUDIO) micPermission.launch(p) else genericPermission.launch(p)
+                        if (p == Manifest.permission.RECORD_AUDIO) requestMic() else genericPermission.launch(p)
                     },
                     onClose = { screen = Screen.HOME },
                 )
@@ -187,7 +191,7 @@ class MainActivity : ComponentActivity() {
                     isDefault = isDefault,
                     micGranted = micGranted,
                     onSetDefault = { openHomeSettings() },
-                    onGrantMic = { micPermission.launch(Manifest.permission.RECORD_AUDIO) },
+                    onGrantMic = { requestMic() },
                     onOpenCore = { app.prefs.setOnboarded(); screen = Screen.SETTINGS },
                     onDone = { app.prefs.setOnboarded() },
                 )
@@ -221,12 +225,19 @@ class MainActivity : ComponentActivity() {
         toast(if (wasPinned) "${entry.label} removed from dock" else "${entry.label} pinned to dock")
     }
 
+    /** Microphone, plus notifications (Android 13+) so the hands-free indicator is visible. */
+    private fun requestMic() {
+        val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (android.os.Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
+        micPermission.launch(perms.toTypedArray())
+    }
+
     private fun startListening() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            app.assistant.listen()
+            app.handsFree.manualListen()
         } else {
             pendingListen = true
-            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            requestMic()
         }
     }
 
@@ -267,11 +278,13 @@ class MainActivity : ComponentActivity() {
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY,
         )?.activityInfo?.packageName == packageName
         micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        com.jarvis.launcher.service.JarvisService.sync(this)
     }
 
     override fun onStop() {
         super.onStop()
-        app.assistant.stopListening()
+        // In hands-free mode the voice loop keeps running in the background service.
+        if (!app.handsFree.isEnabled) app.assistant.stopListening()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

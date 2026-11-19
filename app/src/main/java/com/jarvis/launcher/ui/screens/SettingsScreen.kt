@@ -83,6 +83,13 @@ fun SettingsScreen(
     val seconds by prefs.showSeconds.collectAsState()
     val memories by prefs.memories.collectAsState()
     val llm by app.llm.state.collectAsState()
+    val handsFree by prefs.handsFree.collectAsState()
+    val lockScreen by prefs.lockScreen.collectAsState()
+    val webOn by prefs.webEnabled.collectAsState()
+    val hfState by app.handsFree.state.collectAsState()
+    val engine by app.handsFree.engineLabel.collectAsState()
+    val wakeProgress by app.handsFree.models.progress.collectAsState()
+    var wakeError by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     val models = remember(refresh, llm) { app.llm.installedModels() }
     var url by remember { mutableStateOf("") }
@@ -168,6 +175,81 @@ fun SettingsScreen(
                 }
             }
 
+            // ------------------------------------------------ Hands-free + lock screen
+            HudPanel(Modifier.fillMaxWidth(), title = "Hands-free · \"Hey JARVIS\"", accent = hud.secondary) {
+                ToggleRow("Always listen for \"Hey JARVIS\"", handsFree) { on ->
+                    prefs.setHandsFree(on)
+                    if (on) onRequestPermission(Manifest.permission.RECORD_AUDIO)
+                    com.jarvis.launcher.service.JarvisService.sync(ctx)
+                }
+                Text(
+                    "Say \"Hey JARVIS\". He answers \"Yes, $title?\" and listens for 5 seconds, then goes back to standby. " +
+                        "Works with the screen off and over other apps. You can also say it in one breath: \"Hey JARVIS, what's the weather?\"",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "STATUS · ${hfState.name}" + (engine?.let { " · ${it.uppercase()}" } ?: ""),
+                    style = HudType.label, color = if (hfState == com.jarvis.launcher.ai.HandsFree.State.OFF) hud.textDim else hud.secondary,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (app.handsFree.models.ready) {
+                    Text("WAKE ENGINE · OFFLINE KEYWORD SPOTTER INSTALLED", style = HudType.label, color = hud.secondary)
+                } else {
+                    Text(
+                        "Install the silent offline wake engine (40 MB, one-time). Until then JARVIS uses the system recogniser, which may chime on some phones.",
+                        style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    wakeProgress?.let {
+                        BarMeter(it, Modifier.fillMaxWidth().height(6.dp)); Spacer(Modifier.height(6.dp))
+                    }
+                    HudButton(if (wakeProgress != null) "INSTALLING…" else "INSTALL WAKE ENGINE", enabled = wakeProgress == null) {
+                        wakeError = null
+                        app.appScope.launch {
+                            if (app.handsFree.models.download()) app.handsFree.reload()
+                            else wakeError = "Download failed. Check your connection."
+                        }
+                    }
+                    wakeError?.let { Text(it, style = HudType.label, color = hud.warn) }
+                }
+                Spacer(Modifier.height(14.dp))
+                ToggleRow("JARVIS lock screen", lockScreen) { on ->
+                    prefs.setLockScreen(on)
+                    if (on && android.os.Build.VERSION.SDK_INT >= 29 && !android.provider.Settings.canDrawOverlays(ctx)) {
+                        runCatching {
+                            ctx.startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${ctx.packageName}"),
+                                )
+                            )
+                        }
+                    }
+                    com.jarvis.launcher.service.JarvisService.sync(ctx)
+                }
+                Text(
+                    "Shows the JARVIS HUD each time the screen turns on. Needs \"Display over other apps\". " +
+                        "Your PIN or fingerprint still protects the phone; swipe up to hand over to it.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+            }
+
+            // ------------------------------------------------ Internet
+            HudPanel(Modifier.fillMaxWidth(), title = "Internet knowledge") {
+                ToggleRow("Answer with live data", webOn) { prefs.setWebEnabled(it) }
+                Text(
+                    "Weather, news headlines, facts (Wikipedia / DuckDuckGo), crypto prices and currency conversion. " +
+                        "Only the question is sent; no account or API key needed.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(8.dp))
+                val locOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                HudButton(if (locOk) "LOCAL WEATHER ✓" else "ALLOW LOCATION FOR WEATHER", enabled = !locOk) {
+                    onRequestPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                }
+            }
+
             // ------------------------------------------------ Neural core
             HudPanel(Modifier.fillMaxWidth(), title = "Neural core · on-device LLM", accent = hud.secondary) {
                 val statusColor = when (llm.status) {
@@ -188,7 +270,7 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Runs 100% offline via MediaPipe LLM Inference. Use a .task model such as Gemma 3 1B (int4), " +
+                    "Runs offline via MediaPipe LLM Inference. Use a .task model such as Gemma 3 1B (int4), " +
                         "Qwen 2.5 1.5B or Phi-4 mini from the LiteRT community. 1B models need ~1 GB RAM; 4 GB+ devices recommended.",
                     style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
                 )

@@ -28,17 +28,47 @@ class VoiceInput(private val context: Context) {
     private var recognizer: SpeechRecognizer? = null
     private var usingOnDevice = false
     private var triedFallback = false
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var onEnd: (() -> Unit)? = null
+    private var quiet = false
+    private val startTimeout = Runnable {
+        // Nobody spoke within the window: close the channel silently.
+        recognizer?.let { runCatching { it.cancel(); it.destroy() } }
+        recognizer = null
+        _state.value = VoiceState()
+        finish()
+    }
+
+    private fun finish() {
+        main.removeCallbacks(startTimeout)
+        val cb = onEnd
+        onEnd = null
+        cb?.invoke()
+    }
 
     val available: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context) || onDeviceAvailable()
 
     private fun onDeviceAvailable() =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
 
-    /** Must be called on the main thread. */
-    fun start(onResult: (String) -> Unit) {
+    /**
+     * Must be called on the main thread.
+     * @param startTimeoutMs if set, give up when no speech begins within this window.
+     * @param onEnd invoked when the session ends without delivering a result (timeout, error, silence).
+     * @param quiet suppress user-facing error messages (used by hands-free mode).
+     */
+    fun start(
+        onResult: (String) -> Unit,
+        startTimeoutMs: Long? = null,
+        quiet: Boolean = false,
+        onEnd: (() -> Unit)? = null,
+    ) {
         stop()
+        this.quiet = quiet
+        this.onEnd = onEnd
         triedFallback = false
         begin(preferOnDevice = true, onResult = onResult)
+        if (startTimeoutMs != null) main.postDelayed(startTimeout, startTimeoutMs)
     }
 
     private fun begin(preferOnDevice: Boolean, onResult: (String) -> Unit) {
@@ -52,7 +82,7 @@ class VoiceInput(private val context: Context) {
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) { _state.value = VoiceState(listening = true) }
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() { main.removeCallbacks(startTimeout) }
             override fun onRmsChanged(rmsdB: Float) {
                 val lvl = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
                 _state.value = _state.value.copy(level = _state.value.level * 0.5f + lvl * 0.5f)
@@ -68,12 +98,15 @@ class VoiceInput(private val context: Context) {
                     begin(preferOnDevice = false, onResult = onResult)
                     return
                 }
-                _state.value = VoiceState(error = describe(error))
+                _state.value = if (quiet) VoiceState() else VoiceState(error = describe(error))
+                finish()
             }
             override fun onResults(results: Bundle?) {
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 _state.value = VoiceState()
-                if (text.isNotBlank()) onResult(text) else _state.value = VoiceState(error = "I didn't catch that.")
+                main.removeCallbacks(startTimeout)
+                if (text.isNotBlank()) { onEnd = null; onResult(text) }
+                else { if (!quiet) _state.value = VoiceState(error = "I didn't catch that."); finish() }
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
@@ -91,10 +124,14 @@ class VoiceInput(private val context: Context) {
         _state.value = VoiceState(listening = true)
         runCatching { r.startListening(intent) }.onFailure {
             _state.value = VoiceState(error = "Voice systems unavailable.")
+            finish()
         }
     }
 
+    /** Cancels the current session. Does not invoke onEnd (the caller is taking over). */
     fun stop() {
+        main.removeCallbacks(startTimeout)
+        onEnd = null
         recognizer?.let { runCatching { it.cancel(); it.destroy() } }
         recognizer = null
         if (_state.value.listening) _state.value = VoiceState()
