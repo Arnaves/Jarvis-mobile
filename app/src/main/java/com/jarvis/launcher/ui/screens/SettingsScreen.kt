@@ -1,0 +1,336 @@
+package com.jarvis.launcher.ui.screens
+
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.jarvis.launcher.BuildConfig
+import com.jarvis.launcher.JarvisApp
+import com.jarvis.launcher.ai.CoreStatus
+import com.jarvis.launcher.ui.components.BarMeter
+import com.jarvis.launcher.ui.components.HudPanel
+import com.jarvis.launcher.ui.components.hudFrame
+import com.jarvis.launcher.ui.theme.HudMono
+import com.jarvis.launcher.ui.theme.HudPalettes
+import com.jarvis.launcher.ui.theme.HudType
+import com.jarvis.launcher.ui.theme.LocalHud
+import kotlinx.coroutines.launch
+import java.io.File
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SettingsScreen(
+    app: JarvisApp,
+    isDefaultLauncher: Boolean,
+    onSetDefault: () -> Unit,
+    onImportModel: () -> Unit,
+    onRequestPermission: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val hud = LocalHud.current
+    val ctx = LocalContext.current
+    val prefs = app.prefs
+    val theme by prefs.theme.collectAsState()
+    val voice by prefs.voiceReplies.collectAsState()
+    val title by prefs.userTitle.collectAsState()
+    val gpu by prefs.useGpu.collectAsState()
+    val seconds by prefs.showSeconds.collectAsState()
+    val memories by prefs.memories.collectAsState()
+    val llm by app.llm.state.collectAsState()
+    var refresh by remember { mutableIntStateOf(0) }
+    val models = remember(refresh, llm) { app.llm.installedModels() }
+    var url by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun loadModel(f: File) {
+        prefs.setModelPath(f.absolutePath)
+        app.appScope.launch { app.llm.load(f.absolutePath, prefs.useGpu.value) }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.82f))
+            .systemBarsPadding()
+            .imePadding()
+            .padding(horizontal = 14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("SYSTEM CONFIGURATION", style = HudType.title, color = hud.primary, modifier = Modifier.weight(1f))
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = hud.primary) }
+        }
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // ------------------------------------------------ Launcher
+            HudPanel(Modifier.fillMaxWidth(), title = "Home launcher") {
+                Text(
+                    if (isDefaultLauncher) "JARVIS is your default home screen." else "JARVIS isn't your default home screen yet.",
+                    style = HudType.body, color = hud.text,
+                )
+                if (!isDefaultLauncher) {
+                    Spacer(Modifier.height(10.dp))
+                    HudButton("SET AS DEFAULT", onClick = onSetDefault)
+                }
+                Spacer(Modifier.height(10.dp))
+                ToggleRow("Show seconds on clock", seconds) { prefs.setShowSeconds(it) }
+            }
+
+            // ------------------------------------------------ Theme
+            HudPanel(Modifier.fillMaxWidth(), title = "HUD colour scheme") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HudPalettes.all.forEach { p ->
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .border(if (p.id == theme) 2.dp else 1.dp, p.primary.copy(alpha = if (p.id == theme) 1f else 0.4f), RoundedCornerShape(50))
+                                .clickable { prefs.setTheme(p.id) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(12.dp).clip(CircleShape).background(p.primary))
+                            Spacer(Modifier.width(4.dp))
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(p.secondary))
+                            Spacer(Modifier.width(8.dp))
+                            Text(p.title, color = hud.text, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            // ------------------------------------------------ Voice
+            HudPanel(Modifier.fillMaxWidth(), title = "Voice & personality") {
+                ToggleRow("Spoken replies", voice) { prefs.setVoiceReplies(it) }
+                Spacer(Modifier.height(10.dp))
+                Text("JARVIS addresses you as", style = HudType.label, color = hud.textDim)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("sir", "ma'am", "boss", "chief", "captain").forEach { t ->
+                        Chip(t, selected = title == t) { prefs.setUserTitle(t) }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                HudField(title, "Or type a name…") { prefs.setUserTitle(it) }
+                Spacer(Modifier.height(10.dp))
+                val micOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                val contactsOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HudButton(if (micOk) "MIC ✓" else "GRANT MIC", enabled = !micOk) { onRequestPermission(Manifest.permission.RECORD_AUDIO) }
+                    HudButton(if (contactsOk) "CONTACTS ✓" else "GRANT CONTACTS", enabled = !contactsOk) { onRequestPermission(Manifest.permission.READ_CONTACTS) }
+                }
+            }
+
+            // ------------------------------------------------ Neural core
+            HudPanel(Modifier.fillMaxWidth(), title = "Neural core · on-device LLM", accent = hud.secondary) {
+                val statusColor = when (llm.status) {
+                    CoreStatus.READY -> hud.secondary
+                    CoreStatus.ERROR -> hud.warn
+                    CoreStatus.LOADING -> hud.warn
+                    CoreStatus.NOT_INSTALLED -> hud.textDim
+                }
+                Text(llm.message.uppercase(), style = HudType.data, color = statusColor)
+                llm.modelName?.let { Text(it, style = HudType.label, color = hud.textDim) }
+                llm.transferProgress?.let { p ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(if (p < 0) "TRANSFERRING…" else "TRANSFERRING ${(p * 100).toInt()}%", style = HudType.label, color = hud.primary)
+                    Spacer(Modifier.height(4.dp))
+                    BarMeter(if (p < 0) 0.5f else p, Modifier.fillMaxWidth().height(8.dp))
+                }
+                error?.let { Spacer(Modifier.height(6.dp)); Text(it, style = HudType.label, color = hud.warn) }
+
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Runs 100% offline via MediaPipe LLM Inference. Use a .task model such as Gemma 3 1B (int4), " +
+                        "Qwen 2.5 1.5B or Phi-4 mini from the LiteRT community. 1B models need ~1 GB RAM; 4 GB+ devices recommended.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(12.dp))
+
+                if (models.isNotEmpty()) {
+                    Text("INSTALLED MODELS", style = HudType.label, color = hud.textDim)
+                    Spacer(Modifier.height(6.dp))
+                    models.forEach { f ->
+                        val active = llm.modelName == f.name && llm.status == CoreStatus.READY
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .hudFrame(hud, cut = 6.dp, fillAlpha = if (active) 0.12f else 0.03f, accent = if (active) hud.secondary else hud.primary)
+                                .clickable(enabled = llm.status != CoreStatus.LOADING) { loadModel(f) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(f.name, color = hud.text, fontSize = 13.sp, maxLines = 1)
+                                Text(
+                                    "%.0f MB · %s".format(f.length() / 1_048_576f, if (active) "ACTIVE" else "TAP TO LOAD"),
+                                    style = HudType.label, color = if (active) hud.secondary else hud.textDim,
+                                )
+                            }
+                            IconButton(onClick = { app.llm.delete(f); if (prefs.modelPath.value == f.absolutePath) prefs.setModelPath(null); refresh++ }) {
+                                Icon(Icons.Outlined.Delete, "Delete", tint = hud.warn)
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HudButton("IMPORT MODEL FILE", enabled = llm.transferProgress == null, onClick = onImportModel)
+                    if (llm.status == CoreStatus.READY) HudButton("UNLOAD") { app.llm.unload() }
+                }
+                Spacer(Modifier.height(12.dp))
+                ToggleRow("GPU acceleration (faster, model must support it)", gpu) {
+                    prefs.setUseGpu(it)
+                    prefs.modelPath.value?.let { p -> app.appScope.launch { app.llm.load(p, it) } }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("OR DOWNLOAD DIRECTLY", style = HudType.label, color = hud.textDim)
+                Spacer(Modifier.height(6.dp))
+                HudField(url, "https://…/model.task") { url = it.trim() }
+                Spacer(Modifier.height(6.dp))
+                HudField(token, "Access token (optional, for gated models)", secret = true) { token = it.trim() }
+                Spacer(Modifier.height(8.dp))
+                HudButton("DOWNLOAD", enabled = url.startsWith("https://") && llm.transferProgress == null) {
+                    error = null
+                    app.appScope.launch {
+                        runCatching { app.llm.download(url, token) }
+                            .onSuccess { path -> refresh++; loadModel(File(path)) }
+                            .onFailure { error = "Download failed: ${it.message}" }
+                    }
+                }
+            }
+
+            // ------------------------------------------------ Memory
+            HudPanel(Modifier.fillMaxWidth(), title = "Memory banks") {
+                if (memories.isEmpty()) {
+                    Text("Empty. Say \"remember that…\" to store notes on-device.", style = HudType.body, color = hud.textDim)
+                } else {
+                    memories.takeLast(8).forEach { Text("• $it", style = HudType.body.copy(fontSize = 13.sp), color = hud.text) }
+                    Spacer(Modifier.height(10.dp))
+                    HudButton("WIPE MEMORY") { prefs.clearMemories() }
+                }
+            }
+
+            // ------------------------------------------------ About
+            HudPanel(Modifier.fillMaxWidth(), title = "About") {
+                Text("JARVIS Launcher v${BuildConfig.VERSION_NAME}", style = HudType.data, color = hud.text)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Privacy: voice, conversations, memories and the AI model never leave this device. " +
+                        "Network is only used if you choose to download a model or search the web.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun HudButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val hud = LocalHud.current
+    Box(
+        Modifier
+            .hudFrame(hud, cut = 6.dp, fillAlpha = if (enabled) 0.14f else 0.03f, accent = if (enabled) hud.primary else hud.textDim)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(label, fontFamily = HudMono, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 2.sp, color = if (enabled) hud.primary else hud.textDim)
+    }
+}
+
+@Composable
+private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val hud = LocalHud.current
+    Text(
+        label, color = if (selected) Color.Black else hud.primary, fontSize = 12.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) hud.primary else Color.Transparent)
+            .border(1.dp, hud.primary.copy(alpha = 0.5f), RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+    val hud = LocalHud.current
+    Row(Modifier.fillMaxWidth().clickable { onChange(!value) }, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = HudType.body.copy(fontSize = 14.sp), color = hud.text, modifier = Modifier.weight(1f))
+        Switch(
+            checked = value, onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.Black, checkedTrackColor = hud.primary,
+                uncheckedThumbColor = hud.textDim, uncheckedTrackColor = Color.Transparent, uncheckedBorderColor = hud.dim,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun HudField(value: String, hint: String, secret: Boolean = false, onChange: (String) -> Unit) {
+    val hud = LocalHud.current
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .hudFrame(hud, cut = 6.dp, fillAlpha = 0.06f)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+    ) {
+        if (value.isEmpty()) Text(hint, style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim)
+        BasicTextField(
+            value = value, onValueChange = onChange, singleLine = true,
+            textStyle = HudType.body.copy(fontSize = 13.sp, color = hud.text),
+            cursorBrush = SolidColor(hud.primary),
+            visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
