@@ -30,18 +30,36 @@ class JarvisApp : Application() {
     lateinit var assistant: Assistant; private set
     lateinit var web: WebKnowledge; private set
     lateinit var handsFree: HandsFree; private set
+    lateinit var tasks: com.jarvis.launcher.ai.TaskEngine; private set
+
+    /** Fires when a charger is connected (UI plays the power-surge animation). */
+    val powerSurge = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     override fun onCreate() {
         super.onCreate()
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            object : android.content.BroadcastReceiver() {
+                override fun onReceive(c: android.content.Context, i: android.content.Intent) { powerSurge.tryEmit(Unit) }
+            },
+            android.content.IntentFilter(android.content.Intent.ACTION_POWER_CONNECTED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         prefs = Prefs(this)
         apps = AppRepository(this)
         monitor = SystemMonitor(this)
         llm = LocalLlm(this)
         speaker = Speaker(this)
         voice = VoiceInput(this)
-        val skills = Skills(this, apps, prefs, monitor)
+        val contacts = com.jarvis.launcher.ai.Contacts(this)
+        val skills = Skills(this, apps, prefs, monitor, contacts)
         web = WebKnowledge(this)
-        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web)
+        tasks = com.jarvis.launcher.ai.TaskEngine(this, prefs)
+        val concierge = com.jarvis.launcher.ai.Concierge(this, prefs, contacts, apps)
+        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge)
+        tasks.executor = { cmd -> assistant.submit(cmd) }
+        tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
+        tasks.rearm()
         handsFree = HandsFree(this, voice, speaker, assistant, prefs, WakeModelStore(this))
 
         // Bring the neural core online in the background if a model is installed.

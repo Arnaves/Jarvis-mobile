@@ -40,9 +40,17 @@ import kotlinx.coroutines.launch
 class LockScreenActivity : ComponentActivity() {
     private val app get() = application as JarvisApp
     private var unlockSignal by androidx.compose.runtime.mutableIntStateOf(0)
+    private var surge by androidx.compose.runtime.mutableStateOf(false)
+    private var reason = Reason.ARM
+    private var showCount by androidx.compose.runtime.mutableIntStateOf(0)
+
+    enum class Reason { ARM, WAKE_WORD, CHARGER }
 
     private val userPresent = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { unlockSignal++ }
+        override fun onReceive(context: Context, intent: Intent) {
+            // Unlocked behind us (fingerprint/face): play the exit if visible, otherwise just vanish.
+            if (visible) unlockSignal++ else finishQuietly()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +66,7 @@ class LockScreenActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         }
+        readIntent(intent)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() {} })
         ContextCompat.registerReceiver(this, userPresent, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED)
 
@@ -87,12 +96,41 @@ class LockScreenActivity : ComponentActivity() {
                         handsFree = hf != HandsFree.State.OFF,
                         showSeconds = seconds,
                         unlockSignal = unlockSignal,
+                        surge = surge,
+                        introKey = showCount,
+                        onSurgeDone = { surge = false },
                         onMic = { startListening() },
                         onUnlocked = { dismiss() },
                     )
                 }
             }
         }
+    }
+
+    private fun readIntent(i: Intent?) {
+        reason = runCatching { Reason.valueOf(i?.getStringExtra(EXTRA_REASON) ?: "ARM") }.getOrDefault(Reason.ARM)
+        if (reason == Reason.CHARGER) surge = true
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        readIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val km = getSystemService(KeyguardManager::class.java)
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        // Never stand between the user and their phone once it's already unlocked
+        // (e.g. lock delay not elapsed, or we were launched late after biometric unlock).
+        if (pm.isInteractive && !km.isKeyguardLocked && reason == Reason.ARM) { finishQuietly(); return }
+        visible = true
+        if (pm.isInteractive) showCount++
+    }
+
+    override fun onStop() {
+        visible = false
+        super.onStop()
     }
 
     private fun startListening() {
@@ -123,6 +161,7 @@ class LockScreenActivity : ComponentActivity() {
     }
 
     companion object {
-        const val EXTRA_FROM_WAKE = "from_wake"
+        const val EXTRA_REASON = "reason"
+        @Volatile var visible = false
     }
 }

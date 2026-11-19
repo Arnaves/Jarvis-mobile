@@ -29,6 +29,12 @@ data class SystemSnapshot(
     val network: String = "OFFLINE",
     val uptime: String = "",
     val nextAlarm: String? = null,
+    /** "AC", "USB", "WIRELESS", "DOCK" or null when unplugged. */
+    val plug: String? = null,
+    /** Milliseconds until full, or null if unknown. */
+    val timeToFullMs: Long? = null,
+    /** Approximate charging power in watts, or null if the device doesn't report it. */
+    val watts: Float? = null,
 )
 
 class SystemMonitor(private val context: Context) {
@@ -58,6 +64,26 @@ class SystemMonitor(private val context: Context) {
             SimpleDateFormat("EEE HH:mm", Locale.getDefault()).format(Date(it.triggerTime))
         }
 
+        val plugged = battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val plug = when (plugged) {
+            BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+            BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+            BatteryManager.BATTERY_PLUGGED_WIRELESS -> "WIRELESS"
+            8 /* BATTERY_PLUGGED_DOCK, API 33 */ -> "DOCK"
+            else -> null
+        }
+        val bm = context.getSystemService(BatteryManager::class.java)
+        val ttf = if (charging && android.os.Build.VERSION.SDK_INT >= 28) {
+            bm?.computeChargeTimeRemaining()?.takeIf { it > 0 }
+        } else null
+        val watts = if (charging) runCatching {
+            // CURRENT_NOW is µA on most devices (some report mA or negative values while charging).
+            var ua = kotlin.math.abs(bm!!.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW).toLong())
+            if (ua in 1..20_000) ua *= 1000 // device reports mA
+            val mv = battery?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+            (ua / 1_000_000f) * (mv / 1000f)
+        }.getOrNull()?.takeIf { it in 0.3f..250f } else null
+
         return SystemSnapshot(
             batteryPct = pct,
             charging = charging,
@@ -69,6 +95,9 @@ class SystemMonitor(private val context: Context) {
             network = networkLabel(),
             uptime = uptime,
             nextAlarm = alarm,
+            plug = if (charging) plug ?: "AC" else null,
+            timeToFullMs = ttf,
+            watts = watts,
         )
     }
 

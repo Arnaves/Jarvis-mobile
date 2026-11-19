@@ -136,7 +136,12 @@ fun HomeScreen(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    ArcReactor(mode, voice.level, Modifier.fillMaxSize())
+                    if (sys.charging) {
+                        com.jarvis.launcher.ui.components.EnergyStream(sys.batteryPct / 100f, Modifier.fillMaxSize(), intensity = 0.7f)
+                        ArcReactor(mode, voice.level, Modifier.size(170.dp))
+                    } else {
+                        ArcReactor(mode, voice.level, Modifier.fillMaxSize())
+                    }
                 }
                 SideTelemetry(
                     listOf("RAM" to "${sys.ramUsedPct}%", "DSK" to "${sys.storageUsedPct}%", "UP" to sys.uptime.substringBefore(' ')),

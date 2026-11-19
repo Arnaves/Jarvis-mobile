@@ -46,6 +46,8 @@ class Assistant(
     private val prefs: Prefs,
     private val monitor: SystemMonitor,
     private val web: WebKnowledge,
+    private val tasks: TaskEngine,
+    private val concierge: Concierge,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ids = AtomicLong(0)
@@ -110,6 +112,24 @@ class Assistant(
         speaker.stop()
         generation?.cancel()
         add(ChatMessage(ids.incrementAndGet(), true, text, source = ChatMessage.Source.USER))
+
+        // Bookings / appointments first: "for tomorrow morning" there is the booking time, not a trigger.
+        val booking = concierge.classify(text)
+        // Deferred tasks: "...when I reach office", "at 6 pm ...", "in 20 minutes ..."
+        if (booking == null) TaskParser.parse(text)?.let { parsed ->
+            deliver(tasks.schedule(parsed))
+            return
+        }
+        // Places & task management, bookings (async)
+        val asyncReply: (suspend () -> Reply)? = booking?.let { req -> { concierge.handle(req) } } ?: tasks.meta(text)
+        if (asyncReply != null) {
+            generation = scope.launch {
+                thinking.value = true
+                val r = try { asyncReply() } finally { thinking.value = false }
+                deliver(r)
+            }
+            return
+        }
 
         val reply = runCatching { skills.handle(text) }.getOrNull()
         if (reply != null) {

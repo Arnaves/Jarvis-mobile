@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">JARVIS</string>
+    <string name="accessibility_description">Lets JARVIS press "Send" in WhatsApp when you ask him to send a message by voice. JARVIS only acts on WhatsApp, and only right after you gave a command.</string>
 </resources>

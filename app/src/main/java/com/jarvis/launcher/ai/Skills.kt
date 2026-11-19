@@ -43,6 +43,7 @@ class Skills(
     private val apps: AppRepository,
     private val prefs: Prefs,
     private val monitor: SystemMonitor,
+    private val contacts: Contacts = Contacts(context),
 ) {
     private val camera = context.getSystemService(CameraManager::class.java)
     private val audio = context.getSystemService(AudioManager::class.java)
@@ -85,7 +86,7 @@ class Skills(
 
     private val skills: List<(String) -> Reply?> = listOf(
         ::greeting, ::identity, ::help, ::flashlight, ::timer, ::alarm, ::openSettings, ::status, ::openApp,
-        ::call, ::message, ::navigate, ::search, ::media, ::volume, ::camera, ::remember, ::recall,
+        ::call, ::whatsapp, ::message, ::navigate, ::search, ::media, ::volume, ::camera, ::remember, ::reminderNeedsTrigger, ::recall,
         ::time, ::date, ::battery, ::calculate, ::fun_, ::uninstall,
     )
 
@@ -236,30 +237,68 @@ class Skills(
 
     private fun call(q: String): Reply? {
         val m = Regex("^(call|dial|phone|ring)\\s+(.+)$").find(q) ?: return null
+        if (Regex("\\band (take|book|make|get|fix|schedule|set up|arrange)\\b").containsMatchIn(q)) return null
         val who = m.groupValues[2].removeSuffix(" now").trim()
         val digits = who.replace(Regex("[^0-9+]"), "")
         if (digits.length >= 3 && digits.length >= who.replace(" ", "").length - 2) {
             return Reply("Dialling $digits.", leavesLauncher = true, action = { dial(digits) })
         }
-        if (!hasContacts()) return Reply("I need access to your contacts to do that, $title.", permission = Manifest.permission.READ_CONTACTS)
-        val contact = findContact(who) ?: return Reply("I couldn't find $who in your contacts.")
-        return Reply("Calling ${contact.first}.", leavesLauncher = true, action = { dial(contact.second) })
+        val contact = resolveContact(who) ?: return contactProblem(who)
+        return Reply("Calling ${contact.name}.", leavesLauncher = true, action = { dial(contact.number) })
+    }
+
+    private fun whatsapp(q: String): Reply? {
+        val wa = "(?:whatsapp|whats app|what's app|watsapp|whatsap)"
+        val m = Regex("^(?:send |write |drop )?(?:a |an )?$wa(?: message| msg| text)?(?: to)? (.+?),? (?:saying|that says|which says|that|say|telling (?:her|him|them)|with)\\s+(.+)$").find(q)
+            ?: Regex("^(?:send |write )?(?:a )?(?:message|text|msg) (?:to )?(.+?) on $wa,? (?:saying|that says|that|say)\\s+(.+)$").find(q)
+            ?: Regex("^$wa (.+?),? (?:saying|that|say)\\s+(.+)$").find(q)
+            ?: return null
+        val who = m.groupValues[1].removePrefix("to ").trim()
+        val body = m.groupValues[2].trim().replaceFirstChar { it.uppercase() }
+        val contact = resolveContact(who) ?: return contactProblem(who)
+        val pkg = listOf("com.whatsapp", "com.whatsapp.w4b").firstOrNull { installed(it) }
+            ?: return Reply("WhatsApp isn't installed, $title. Shall I text ${contact.name} instead? Say \"text ${contact.name} saying $body\".")
+        val auto = com.jarvis.launcher.service.JarvisAccessibility.enabled(context)
+        return Reply(
+            if (auto) "Sending WhatsApp to ${contact.name}: \"$body\"."
+            else "WhatsApp to ${contact.name} is ready, $title. Tap send. (Enable JARVIS auto-send in Settings to skip this.)",
+            leavesLauncher = true,
+            action = {
+                if (auto) com.jarvis.launcher.service.JarvisAccessibility.armSend()
+                val uri = Uri.parse("https://api.whatsapp.com/send?phone=${contacts.international(contact.number)}&text=" + Uri.encode(body))
+                apps.startSafely(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg))
+            },
+        )
     }
 
     private fun message(q: String): Reply? {
-        val m = Regex("^(text|message|sms|send a (text|message) to|send)\\s+(.+?)(?:\\s+(?:saying|that says|that|say)\\s+(.+))?$").find(q) ?: return null
-        val who = m.groupValues[3].removePrefix("to ").trim()
-        val body = m.groupValues[4]
-        val number: Pair<String, String> = if (who.any { it.isDigit() }) {
-            who to who.replace(Regex("[^0-9+]"), "")
-        } else {
-            if (!hasContacts()) return Reply("I need access to your contacts to do that, $title.", permission = Manifest.permission.READ_CONTACTS)
-            findContact(who) ?: return Reply("I couldn't find $who in your contacts.")
+        val m = Regex("^(text|message|sms|send an? (?:text|message|sms) to|send)\\s+(.+?)(?:,?\\s+(?:saying|that says|that|say)\\s+(.+))?$").find(q) ?: return null
+        val who = m.groupValues[2].removePrefix("to ").trim()
+        val body = m.groupValues[3].trim().replaceFirstChar { it.uppercase() }
+        val contact = if (who.count { it.isDigit() } >= 3) Contact(who, who.replace(Regex("[^0-9+]"), ""))
+        else resolveContact(who) ?: return contactProblem(who)
+        val canSend = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        if (canSend && body.isNotBlank()) {
+            return Reply("Message sent to ${contact.name}: \"$body\".", action = {
+                runCatching {
+                    val sms = if (android.os.Build.VERSION.SDK_INT >= 31) context.getSystemService(android.telephony.SmsManager::class.java)
+                    else @Suppress("DEPRECATION") android.telephony.SmsManager.getDefault()
+                    sms.sendMultipartTextMessage(contact.number, null, sms.divideMessage(body), null, null)
+                }
+            })
         }
-        return Reply("Message to ${number.first} is ready to send.", leavesLauncher = true, action = {
-            apps.startSafely(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${number.second}")).putExtra("sms_body", body))
+        return Reply("Message to ${contact.name} is ready to send.", leavesLauncher = true, action = {
+            apps.startSafely(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${contact.number}")).putExtra("sms_body", body))
         })
     }
+
+    private fun resolveContact(who: String): Contact? = contacts.find(who)
+
+    private fun contactProblem(who: String): Reply =
+        if (!contacts.granted) Reply("I need access to your contacts to do that, $title.", permission = Manifest.permission.READ_CONTACTS)
+        else Reply("I couldn't find $who in your contacts.")
+
+    private fun installed(pkg: String) = runCatching { context.packageManager.getPackageInfo(pkg, 0); true }.getOrDefault(false)
 
     private fun navigate(q: String): Reply? {
         val m = Regex("^(navigate|directions|take me|drive|route me|get me)( me)?( to| home)?\\s*(.*)$").find(q) ?: return null
@@ -342,6 +381,12 @@ class Skills(
         return Reply("Logged to memory: \"$fact\".")
     }
 
+    private fun reminderNeedsTrigger(q: String): Reply? {
+        val m = Regex("^remind me (?:to |that |about )?(.+)$").find(q) ?: return null
+        val what = m.groupValues[1]
+        return Reply("When should I remind you to $what, $title? Say, for example, \"remind me to $what at 6 pm\", \"in 20 minutes\" or \"when I reach home\".")
+    }
+
     private fun recall(q: String): Reply? {
         if (Regex("^(forget everything|clear (your )?memory|wipe (your )?memory)").containsMatchIn(q)) {
             prefs.clearMemories(); return Reply("Memory banks wiped, $title.")
@@ -402,19 +447,6 @@ class Skills(
     }
 
     // ---------------------------------------------------------------- helpers
-
-    private fun hasContacts() =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-
-    private fun findContact(name: String): Pair<String, String>? = runCatching {
-        val uri = Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(name))
-        context.contentResolver.query(
-            uri,
-            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
-            null, null,
-            "${ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY} DESC",
-        )?.use { c -> if (c.moveToFirst()) c.getString(0) to c.getString(1) else null }
-    }.getOrNull()
 
     private fun dial(number: String) {
         apps.startSafely(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number))))

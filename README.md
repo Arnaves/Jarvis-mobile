@@ -20,7 +20,8 @@ Live internet lookups are optional; when one runs, only that question is sent.
 - Say **"Hey JARVIS"** at any time: on the home screen, inside other apps, or with the screen off.
   He replies **"Yes, sir?"** and listens for **5 seconds**. If you say nothing, he goes back to standby.
 - You can say it in one breath: *"Hey JARVIS, what's the weather in Tokyo?"*
-- Wake-word detection uses **Vosk**, which is offline, silent and low-power. The model is bundled in CI builds;
+- Wake-word detection uses **Vosk**, which is offline, silent and low-power. It only triggers on the full phrase
+  "hey / ok / hi JARVIS" with high word confidence, and a set of sound-alike decoy words absorbs everyday speech and noise. The model is bundled in CI builds;
   for local builds, install it in Settings with one tap. Until it's installed, JARVIS falls back to the system
   recogniser, which may chime on some phones.
 - Runs as a foreground service with a "Stop listening" button in its notification.
@@ -33,6 +34,30 @@ Live internet lookups are optional; when one runs, only that question is sent.
   Biometric unlock plays the same exit animation.
 - Android doesn't allow third-party apps to replace the secure system lock, so JARVIS is drawn *over* it.
   Your phone stays exactly as secure as before. This needs the "Display over other apps" permission.
+  JARVIS is pre-loaded when the screen turns off, so it's already on top when you wake the phone.
+  **Xiaomi/Redmi/Poco** also need "Show on Lock screen", and Oppo/Vivo/Realme need "Lock screen display".
+  Settings has a shortcut to the right page.
+
+**Tasks you assign by voice**
+| Say… | What happens |
+|---|---|
+| "Hey JARVIS, send a WhatsApp to Mummy Kolkata saying good morning, reached office **when I reach office**" | Geofence on your saved "office". On arrival JARVIS opens the chat with the message and presses Send (with WhatsApp auto-send enabled) |
+| "save this place as office" / "this is my gym" | Saves your current location as a named place |
+| "**at 6 pm** text Rahul saying running late" / "**in 20 minutes** remind me to call dad" | Exact alarm, then runs the command. SMS goes out automatically with the SMS permission |
+| "remind me to buy milk **when I leave work**" | Notification + spoken reminder on exit |
+| "what are my tasks" / "cancel the task about milk" | Manage the pending tasks (also listed in Settings) |
+
+If the phone is locked when a task needs another app's screen (WhatsApp, calls), JARVIS says so and posts a "Run now" notification.
+
+**Bookings & appointments**
+"Book a table for two at Peter Cat at 8 pm" or "call Dr Mehta clinic and take an appointment for tomorrow morning":
+JARVIS finds the place in your contacts or on OpenStreetMap near you, then dials it, opens its booking website, or falls
+back to Maps. It also shows a script to read out. Android doesn't let any app speak into a phone call, so a fully
+autonomous calling agent would need a cloud telephony service; that's deliberately not part of this offline-first app.
+
+**Charging animation**
+Plugging in plays a full-screen *power surge*: shockwaves and the core igniting. While charging, energy streams and
+lightning flow into the core on the home and lock screens, with live percent, watts, time to full and cell temperature.
 
 **Live internet knowledge (no API keys)**
 | Say… | Source |

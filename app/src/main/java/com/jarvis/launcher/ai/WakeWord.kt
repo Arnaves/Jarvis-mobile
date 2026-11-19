@@ -33,11 +33,53 @@ interface WakeEngine {
     fun stop()
 }
 
-private val WAKE = Regex("\\b(?:hey|hi|ok|okay|yo)?\\s*(jarvis|jervis|jarvi|jarvas|javis)\\b[,.!]?\\s*(.*)", RegexOption.IGNORE_CASE)
+private val WAKE = Regex("\\b(?:hey|hi|ok|okay)\\s+(jarvis|jervis|jarvas|javis)\\b[,.!]?\\s*(.*)", RegexOption.IGNORE_CASE)
+private val WAKE_ALONE = Regex("^\\s*(jarvis|jervis)\\s*[.!?]?\\s*$", RegexOption.IGNORE_CASE)
 
 /**
- * Offline keyword spotter built on Vosk with a tiny grammar. Silent (no system beeps),
- * keeps working with the screen off, and uses very little CPU.
+ * Decides whether a Vosk final result really contains "hey JARVIS".
+ * Pure function so it can be unit-tested.
+ */
+object WakeDecision {
+    private val prefixes = setOf("hey", "okay", "ok", "hi")
+    const val MIN_WAKE_CONF = 0.90
+    const val MIN_PREFIX_CONF = 0.65
+
+    /** [resultJson] is Vosk's result with words enabled: {"result":[{"word":"hey","conf":0.98}, ...], "text":"hey jarvis"} */
+    fun isWake(resultJson: String?): Boolean {
+        val o = runCatching { JSONObject(resultJson ?: return false) }.getOrNull() ?: return false
+        val words = o.optJSONArray("result") ?: return false
+        for (i in 1 until words.length()) {
+            val w = words.optJSONObject(i) ?: continue
+            val p = words.optJSONObject(i - 1) ?: continue
+            if (w.optString("word") == "jarvis" && w.optDouble("conf", 0.0) >= MIN_WAKE_CONF &&
+                p.optString("word") in prefixes && p.optDouble("conf", 0.0) >= MIN_PREFIX_CONF
+            ) return true
+        }
+        return false
+    }
+
+    /**
+     * Grammar for the keyword spotter. Besides the wake phrases it contains many
+     * sound-alike decoys, so random speech and noise land on those instead of "jarvis".
+     */
+    val grammar: String = org.json.JSONArray(
+        listOf(
+            "hey jarvis", "okay jarvis", "ok jarvis", "hi jarvis",
+            "hey", "hi", "okay", "ok", "yes", "no", "yeah", "hello", "hey there", "hey guys",
+            "jar", "jars", "java", "jarring", "harvest", "service", "nervous", "office", "notice", "practice",
+            "travis", "davis", "chavez", "garvey", "marvel", "carvings", "jervis", "jealous", "jazz", "darwin",
+            "hey dad", "hey man", "hey mom", "harris", "paris", "parvis", "service is", "a", "the", "and", "is",
+            "it", "this", "that", "what", "you", "i", "of", "to", "in", "so", "but", "we", "they", "he", "she",
+            "[unk]",
+        )
+    ).toString()
+}
+
+/**
+ * Offline keyword spotter built on Vosk with a decoy-rich grammar. Silent (no system beeps),
+ * keeps working with the screen off, and uses very little CPU. Only fires on a *final*
+ * result containing "hey/ok/hi JARVIS" with high word confidence.
  */
 class VoskWakeEngine(private val modelDir: File) : WakeEngine {
     override val label = "Vosk offline keyword spotter"
@@ -55,22 +97,18 @@ class VoskWakeEngine(private val modelDir: File) : WakeEngine {
         val m = model ?: return
         stop()
         fired = false
-        val grammar = "[\"hey jarvis\", \"okay jarvis\", \"hi jarvis\", \"jarvis\", \"[unk]\"]"
-        val rec = Recognizer(m, 16000f, grammar)
+        val rec = Recognizer(m, 16000f, WakeDecision.grammar)
+        rec.setWords(true)
         recognizer = rec
         val svc = SpeechService(rec, 16000f)
         service = svc
         svc.startListening(object : org.vosk.android.RecognitionListener {
-            private fun check(text: String) {
-                if (fired || !text.contains("jarvis")) return
+            // Partials are too noisy to act on; wait for the end of the utterance.
+            override fun onPartialResult(hypothesis: String?) {}
+            override fun onResult(hypothesis: String?) {
+                if (fired || !WakeDecision.isWake(hypothesis)) return
                 fired = true
                 Handler(Looper.getMainLooper()).post { stop(); onWake(null) }
-            }
-            override fun onPartialResult(hypothesis: String?) {
-                check(runCatching { JSONObject(hypothesis ?: "{}").optString("partial") }.getOrDefault(""))
-            }
-            override fun onResult(hypothesis: String?) {
-                check(runCatching { JSONObject(hypothesis ?: "{}").optString("text") }.getOrDefault(""))
             }
             override fun onFinalResult(hypothesis: String?) {}
             override fun onError(exception: Exception?) { stop() }
@@ -123,8 +161,8 @@ class RecognizerLoopWakeEngine(private val context: Context) : WakeEngine {
             override fun onResults(results: Bundle?) {
                 val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 val m = WAKE.find(t)
-                if (m != null && active) {
-                    val rest = m.groupValues[2].trim().takeIf { it.split(' ').size >= 2 }
+                if ((m != null || WAKE_ALONE.matches(t)) && active) {
+                    val rest = m?.groupValues?.get(2)?.trim()?.takeIf { it.split(' ').size >= 2 }
                     val cb = callback
                     stop()
                     cb?.invoke(rest)

@@ -34,7 +34,17 @@ class JarvisService : Service() {
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == Intent.ACTION_SCREEN_ON && app.prefs.lockScreen.value && isLocked()) showLockScreen(false)
+            if (!app.prefs.lockScreen.value) return
+            when (intent.action) {
+                // Pre-arm while the display is off so JARVIS is already on top of the keyguard
+                // when the screen lights up (instead of appearing only after biometric unlock).
+                Intent.ACTION_SCREEN_OFF -> showLockScreen(LockScreenActivity.Reason.ARM)
+                Intent.ACTION_SCREEN_ON -> if (isLocked() && !LockScreenActivity.visible) showLockScreen(LockScreenActivity.Reason.ARM)
+                Intent.ACTION_POWER_CONNECTED -> {
+                    val pm = getSystemService(PowerManager::class.java)
+                    if (!pm.isInteractive || isLocked()) showLockScreen(LockScreenActivity.Reason.CHARGER)
+                }
+            }
         }
     }
 
@@ -42,12 +52,16 @@ class JarvisService : Service() {
         super.onCreate()
         createChannel()
         goForeground()
-        val filter = IntentFilter(Intent.ACTION_SCREEN_ON)
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_POWER_CONNECTED)
+        }
         ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         app.handsFree.onWake = {
             // Wake word heard: light up the JARVIS lock screen if the phone is locked/asleep.
             val pm = getSystemService(PowerManager::class.java)
-            if (!pm.isInteractive || isLocked()) showLockScreen(true)
+            if (!pm.isInteractive || isLocked()) showLockScreen(LockScreenActivity.Reason.WAKE_WORD)
         }
     }
 
@@ -76,14 +90,14 @@ class JarvisService : Service() {
 
     private fun isLocked() = getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
-    private fun showLockScreen(fromWake: Boolean) {
+    private fun showLockScreen(reason: LockScreenActivity.Reason) {
         // Starting UI from the background needs "Display over other apps" on Android 10+.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !Settings.canDrawOverlays(this)) return
         runCatching {
             startActivity(
                 Intent(this, LockScreenActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                    .putExtra(LockScreenActivity.EXTRA_FROM_WAKE, fromWake)
+                    .putExtra(LockScreenActivity.EXTRA_REASON, reason.name)
             )
         }
     }

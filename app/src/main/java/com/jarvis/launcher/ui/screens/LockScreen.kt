@@ -77,6 +77,9 @@ fun LockScreen(
     handsFree: Boolean,
     showSeconds: Boolean,
     unlockSignal: Int,
+    surge: Boolean = false,
+    introKey: Int = 0,
+    onSurgeDone: () -> Unit = {},
     onMic: () -> Unit,
     onUnlocked: () -> Unit,
 ) {
@@ -97,7 +100,11 @@ fun LockScreen(
         }
     }
 
-    LaunchedEffect(Unit) { intro.animateTo(1f, tween(1400, easing = LinearEasing)) }
+    // Replays each time the display lights up (the activity is pre-armed while the screen is off).
+    LaunchedEffect(introKey) {
+        intro.snapTo(0f)
+        intro.animateTo(1f, tween(1400, easing = LinearEasing))
+    }
     // External unlock (fingerprint / face) also plays the exit animation.
     LaunchedEffect(unlockSignal) { if (unlockSignal > 0) engage() }
 
@@ -161,7 +168,18 @@ fun LockScreen(
                         scaleX = s; scaleY = s
                     },
                 contentAlignment = Alignment.Center,
-            ) { ArcReactor(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.fillMaxSize()) }
+            ) {
+                if (sys.charging) {
+                    com.jarvis.launcher.ui.components.EnergyStream(sys.batteryPct / 100f, Modifier.fillMaxSize())
+                    ArcReactor(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.size(175.dp))
+                } else {
+                    ArcReactor(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.fillMaxSize())
+                }
+            }
+            if (sys.charging) {
+                Spacer(Modifier.height(4.dp))
+                com.jarvis.launcher.ui.components.ChargingReadout(sys)
+            }
 
             Spacer(Modifier.height(10.dp))
             val caption = when {
@@ -201,6 +219,8 @@ fun LockScreen(
             SwipeChevrons(dragFrac)
             Spacer(Modifier.height(14.dp))
         }
+
+        if (surge) com.jarvis.launcher.ui.components.PowerSurge(sys, onDone = onSurgeDone)
 
         // Overload flash on unlock
         if (unlock.value > 0f) {

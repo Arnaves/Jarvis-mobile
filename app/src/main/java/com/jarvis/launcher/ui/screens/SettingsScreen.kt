@@ -90,6 +90,9 @@ fun SettingsScreen(
     val engine by app.handsFree.engineLabel.collectAsState()
     val wakeProgress by app.handsFree.models.progress.collectAsState()
     var wakeError by remember { mutableStateOf<String?>(null) }
+    val tasks by app.tasks.tasks.collectAsState()
+    val places by app.tasks.places.collectAsState()
+    val owner by prefs.ownerName.collectAsState()
     var refresh by remember { mutableIntStateOf(0) }
     val models = remember(refresh, llm) { app.llm.installedModels() }
     var url by remember { mutableStateOf("") }
@@ -228,11 +231,107 @@ fun SettingsScreen(
                     }
                     com.jarvis.launcher.service.JarvisService.sync(ctx)
                 }
+                val maker = android.os.Build.MANUFACTURER.lowercase()
+                if (lockScreen && (maker.contains("xiaomi") || maker.contains("redmi") || maker.contains("poco"))) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Xiaomi/Redmi/Poco: also enable \"Show on Lock screen\" and \"Display pop-up windows while running in background\", otherwise JARVIS only appears after you unlock.",
+                        style = HudType.body.copy(fontSize = 13.sp), color = hud.warn,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    HudButton("OPEN MIUI PERMISSIONS") {
+                        val miui = android.content.Intent("miui.intent.action.APP_PERM_EDITOR")
+                            .setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                            .putExtra("extra_pkgname", ctx.packageName)
+                        runCatching { ctx.startActivity(miui) }.onFailure {
+                            ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${ctx.packageName}")))
+                        }
+                    }
+                } else if (lockScreen && (maker.contains("oppo") || maker.contains("vivo") || maker.contains("realme") || maker.contains("oneplus") || maker.contains("huawei") || maker.contains("honor"))) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "On ${android.os.Build.MANUFACTURER} phones, also allow \"Lock screen display\" / \"Show on lock screen\" for JARVIS in App info › Permissions.",
+                        style = HudType.body.copy(fontSize = 13.sp), color = hud.warn,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    HudButton("OPEN APP INFO") {
+                        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${ctx.packageName}")))
+                    }
+                }
                 Text(
                     "Shows the JARVIS HUD each time the screen turns on. Needs \"Display over other apps\". " +
                         "Your PIN or fingerprint still protects the phone; swipe up to hand over to it.",
                     style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
                 )
+            }
+
+            // ------------------------------------------------ Tasks & automation
+            HudPanel(Modifier.fillMaxWidth(), title = "Tasks & automation") {
+                Text(
+                    "Say things like \"send a WhatsApp to Mummy saying reached office when I reach office\", " +
+                        "\"at 6 pm text Rahul saying running late\" or \"remind me to buy milk when I leave work\". " +
+                        "Teach me places by saying \"save this place as office\" while you're there.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(10.dp))
+                HudField(owner, "Your name (used in booking scripts)") { prefs.setOwnerName(it) }
+                Spacer(Modifier.height(10.dp))
+                val fineOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                val bgOk = app.tasks.hasBackgroundLocation()
+                val smsOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                val a11yOk = com.jarvis.launcher.service.JarvisAccessibility.enabled(ctx)
+                val overlayOk = android.os.Build.VERSION.SDK_INT < 29 || android.provider.Settings.canDrawOverlays(ctx)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HudButton(if (bgOk) "LOCATION ALL THE TIME ✓" else "ALLOW LOCATION ALL THE TIME", enabled = !bgOk) {
+                        if (!fineOk) onRequestPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                        else if (android.os.Build.VERSION.SDK_INT >= 29) onRequestPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    }
+                    HudButton(if (smsOk) "AUTO-SEND SMS ✓" else "ALLOW AUTO-SEND SMS", enabled = !smsOk) {
+                        onRequestPermission(Manifest.permission.SEND_SMS)
+                    }
+                    HudButton(if (a11yOk) "WHATSAPP AUTO-SEND ✓" else "ENABLE WHATSAPP AUTO-SEND", enabled = !a11yOk) {
+                        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                    HudButton(if (overlayOk) "RUN IN BACKGROUND ✓" else "ALLOW RUNNING TASKS IN BACKGROUND", enabled = !overlayOk) {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:${ctx.packageName}"))
+                        )
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= 31) {
+                        val am = ctx.getSystemService(android.app.AlarmManager::class.java)
+                        val exactOk = am.canScheduleExactAlarms()
+                        HudButton(if (exactOk) "EXACT TIMING ✓" else "ALLOW EXACT TIMING", enabled = !exactOk) {
+                            runCatching {
+                                ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:${ctx.packageName}")))
+                            }
+                        }
+                    }
+                }
+                if (!a11yOk) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "WhatsApp auto-send: in Accessibility, open \"JARVIS auto-send\" and switch it on. JARVIS only presses Send in WhatsApp, right after you ask him to.",
+                        style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("SAVED PLACES", style = HudType.label, color = hud.textDim)
+                if (places.isEmpty()) Text("None yet.", style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim)
+                places.forEach { pl ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("◉ ${pl.name}", style = HudType.body.copy(fontSize = 14.sp), color = hud.text, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { app.tasks.deletePlace(pl.name) }) { Icon(Icons.Outlined.Delete, "Delete", tint = hud.warn) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("PENDING TASKS", style = HudType.label, color = hud.textDim)
+                if (tasks.isEmpty()) Text("None.", style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim)
+                tasks.forEach { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(t.describe(), style = HudType.body.copy(fontSize = 13.sp), color = hud.text, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { app.tasks.cancel(t.id) }) { Icon(Icons.Outlined.Delete, "Cancel", tint = hud.warn) }
+                    }
+                }
             }
 
             // ------------------------------------------------ Internet

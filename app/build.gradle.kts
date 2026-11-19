@@ -72,6 +72,10 @@ dependencies {
     // On-device LLM runtime (Gemma / Qwen / Phi .task models, fully offline)
     implementation("com.google.mediapipe:tasks-genai:0.10.27")
 
+    // Geofences for "when I reach office…" tasks
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
     // Offline, always-on "Hey JARVIS" wake-word detection
     implementation("com.alphacephei:vosk-android:0.3.47") { exclude(group = "net.java.dev.jna") }
     implementation("net.java.dev.jna:jna:5.13.0@aar")

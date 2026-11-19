@@ -114,6 +114,12 @@ class MainActivity : ComponentActivity() {
         val onboarded by app.prefs.onboarded.collectAsStateWithLifecycle()
         val handsFree by app.handsFree.state.collectAsStateWithLifecycle()
         var bootDone by remember { mutableStateOf(booted) }
+        var surge by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            app.powerSurge.collect {
+                if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) surge = true
+            }
+        }
 
         val dock: List<AppEntry> = remember(apps, pinned) {
             if (pinned.isEmpty()) app.apps.defaultDock() else pinned.mapNotNull { k -> apps.firstOrNull { it.key == k } }
@@ -196,6 +202,7 @@ class MainActivity : ComponentActivity() {
                     onDone = { app.prefs.setOnboarded() },
                 )
             }
+            if (surge) com.jarvis.launcher.ui.components.PowerSurge(sys, onDone = { surge = false })
             if (!bootDone) BootSequence { bootDone = true }
         }
     }
@@ -260,6 +267,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        // Tapped "Run now" on a deferred task notification (e.g. WhatsApp on arrival).
+        intent?.getStringExtra(com.jarvis.launcher.ai.TaskEngine.EXTRA_RUN_COMMAND)?.let { cmd ->
+            intent.removeExtra(com.jarvis.launcher.ai.TaskEngine.EXTRA_RUN_COMMAND)
+            screen = Screen.CONSOLE
+            window.decorView.post { app.assistant.submit(cmd) }
+            return
+        }
         when (intent?.action) {
             Intent.ACTION_ASSIST, Intent.ACTION_VOICE_COMMAND -> {
                 screen = Screen.CONSOLE
@@ -279,6 +293,7 @@ class MainActivity : ComponentActivity() {
         )?.activityInfo?.packageName == packageName
         micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         com.jarvis.launcher.service.JarvisService.sync(this)
+        app.tasks.syncGeofences()
     }
 
     override fun onStop() {
