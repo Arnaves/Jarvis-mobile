@@ -74,6 +74,8 @@ dependencies {
 
     // Geofences for "when I reach office…" tasks
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // play-services pulls an old Fragment; ActivityResult APIs need >= 1.3
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 
     // Offline, always-on "Hey JARVIS" wake-word detection
