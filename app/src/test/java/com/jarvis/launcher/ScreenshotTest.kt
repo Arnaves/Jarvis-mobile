@@ -30,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi-night")
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-night-xxhdpi")
 class ScreenshotTest {
     @get:Rule val rule = createComposeRule()
     private val app get() = ApplicationProvider.getApplicationContext<JarvisApp>()
