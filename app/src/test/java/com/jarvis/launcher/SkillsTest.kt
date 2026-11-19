@@ -37,6 +37,8 @@ class SkillsTest {
     @Test fun openUnknownApp() = assertTrue(say("open zzqqxx")!!.contains("couldn't locate"))
     @Test fun settingsPanel() = assertEquals("Opening Wi-Fi settings.", say("open wifi settings"))
     @Test fun media() = assertEquals("Next track.", say("skip track"))
-    @Test fun search() = assertNotNull(skills.handle("search for best pizza near me")?.action)
+    @Test fun browserSearch() = assertNotNull(skills.handle("search the web for best pizza near me")?.action)
+    // Plain "search for X" is answered aloud by WebKnowledge instead of opening the browser.
+    @Test fun plainSearchGoesToWeb() = assertNull(skills.handle("search for best pizza near me"))
     @Test fun openEndedFallsThroughToLlm() = assertNull(skills.handle("explain quantum entanglement like I'm five"))
 }

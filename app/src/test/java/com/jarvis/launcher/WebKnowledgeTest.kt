@@ -20,6 +20,8 @@ class WebKnowledgeTest {
     @Test fun cityWeather() = assertEquals(Query.Weather("paris", false), web.classify("weather in Paris"))
     @Test fun tomorrowRain() = assertEquals(Query.Weather("london", true), web.classify("will it rain in london tomorrow"))
     @Test fun headlines() = assertEquals(Query.News(null), web.classify("give me the latest news"))
+    @Test fun leadingTopicNews() = assertEquals(Query.News("cricket"), web.classify("latest cricket news"))
+    @Test fun briefing() = assertEquals(Query.News(null), web.classify("what are today's top headlines"))
     @Test fun topicNews() = assertEquals(Query.News("tesla"), web.classify("news about Tesla"))
     @Test fun crypto() = assertEquals(Query.Crypto("bitcoin"), web.classify("what's the bitcoin price"))
     @Test fun currency() = assertEquals(Query.Currency(100.0, "USD", "INR"), web.classify("convert 100 dollars to rupees"))

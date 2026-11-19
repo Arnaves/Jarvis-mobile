@@ -57,9 +57,10 @@ class WebKnowledge(private val context: Context) {
             return Query.Weather(city, q.contains("tomorrow"))
         }
         if (Regex("\\b(news|headlines|what's happening|what is happening in the world)\\b").containsMatchIn(q)) {
-            val topic = Regex("(?:news|headlines) (?:about|on|for|from|in) (.+)$").find(q)?.groupValues?.get(1)
-                ?: Regex("^(?:latest |today's |any )?(.+?) (?:news|headlines)$").find(q)?.groupValues?.get(1)
-                    ?.takeUnless { it in setOf("the", "latest", "today's", "top", "any", "the latest", "world", "give me the", "tell me the", "what's the", "read me the") }
+            val explicit = Regex("(?:news|headlines) (?:about|on|for|from|in|regarding) (.+)$").find(q)?.groupValues?.get(1)
+            val leading = Regex("^(.+?) (?:news|headlines)\\b").find(q)?.groupValues?.get(1)
+                ?.split(' ')?.filterNot { it in newsFiller }?.joinToString(" ")?.takeIf { it.isNotBlank() }
+            val topic = explicit ?: leading
             return Query.News(topic?.removePrefix("the ")?.trim())
         }
         coins.entries.firstOrNull { (k, _) -> Regex("\\b$k\\b").containsMatchIn(q) }?.let { (_, id) ->
@@ -82,6 +83,12 @@ class WebKnowledge(private val context: Context) {
         }
         return null
     }
+
+    private val newsFiller = setOf(
+        "give", "me", "the", "latest", "today's", "todays", "top", "any", "tell", "read", "what's", "whats", "what",
+        "is", "are", "some", "current", "world", "breaking", "show", "get", "play", "us", "a", "few", "of", "today",
+        "jarvis", "please", "brief", "briefing", "morning", "evening", "daily", "headline", "recent", "new",
+    )
 
     suspend fun answer(query: Query, title: String): WebAnswer = withContext(Dispatchers.IO) {
         if (!online) return@withContext WebAnswer("I'm cut off from the network at the moment, $title.")
