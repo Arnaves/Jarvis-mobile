@@ -116,6 +116,11 @@ How requests are routed:
 - **Everything else** goes to Gemini, with Google Search grounding for facts and current events. That covers conversation, advice, explanations and "what's planned this week?" (it sees your notes). Gemini can also trigger phone actions.
 - **No internet:** commands still work, and the optional offline core (a `.task` file you import) takes over if you have one.
 
+**Quota failover:** free-tier quotas are per model, and Google Search grounding has its own quota. When a request
+hits a quota limit (HTTP 429), JARVIS first retries without search. Then it switches to the next model with quota left:
+flash-lite, then flash, then others, with pro last. Each exhausted model is skipped for the cooldown Google reports.
+Settings shows which model is answering. If every model is out of quota, factual questions fall back to Wikipedia/DuckDuckGo.
+
 The key is encrypted with the Android Keystore and only ever sent to Google. When Gemini answers, your question,
 the recent conversation, saved notes and the time/battery are sent to Google.
 

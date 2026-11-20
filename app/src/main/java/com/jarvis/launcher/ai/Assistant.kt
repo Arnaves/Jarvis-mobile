@@ -277,7 +277,16 @@ class Assistant(
                 askNeural(text)
                 return
             }
-            val msg = "Gemini uplink failed: ${failed.message ?: "unknown error"}."
+            // Factual question: answer from the web instead (Wikipedia / DuckDuckGo) rather than failing.
+            if (grounded && prefs.webEnabled.value && web.online) {
+                _messages.value = _messages.value.filterNot { it.id == id }
+                askWeb(WebKnowledge.Query.Fact(text.trim().trimEnd('?', '.', '!'), text), allowBrowser = false)
+                return
+            }
+            val reason = (failed.message ?: "unknown error").trimEnd('.')
+            val msg = "Gemini uplink failed: $reason. " +
+                if (reason.contains("quota", true)) "Free-tier limits reset over time; I'll keep switching to models with quota left."
+                else "Check your connection or key in Settings."
             update(id, msg, streaming = false)
             if (prefs.voiceReplies.value) speaker.speak(msg)
             return

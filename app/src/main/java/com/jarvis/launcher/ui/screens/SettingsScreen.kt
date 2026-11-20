@@ -220,6 +220,14 @@ fun SettingsScreen(
                     } else {
                         Text("MODEL · ${gem.model}", style = HudType.label, color = hud.textDim)
                     }
+                    gem.activeModel?.takeIf { it != gem.model }?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text("NOW ANSWERING · $it (auto-failover)", style = HudType.label, color = hud.warn)
+                    }
+                    Text(
+                        "If a model runs out of quota, JARVIS automatically switches to the next one with quota left (flash-lite → flash → others).",
+                        style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                    )
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         HudButton(if (verifying) "VERIFYING…" else "VERIFY", enabled = !verifying) {

@@ -27,6 +27,8 @@ data class GeminiState(
     val models: List<String> = emptyList(),
     val status: String = "No API key",
     val verified: Boolean = false,
+    /** The model that actually answered last (differs from [model] after a quota failover). */
+    val activeModel: String? = null,
 )
 
 /**
@@ -95,7 +97,7 @@ class GeminiClient(private val context: Context) {
                     }
                     .map { it.optString("name").removePrefix("models/") }
                     .filter { it.startsWith("gemini") && !it.contains("embedding") && !it.contains("tts") && !it.contains("image") }
-                    .sortedWith(compareByDescending<String> { it.contains("flash") && !it.contains("lite") }.thenByDescending { it })
+                    .let(::rank)
             } finally { c.disconnect() }
         }.onSuccess { list ->
             val current = _state.value.model
@@ -107,12 +109,72 @@ class GeminiClient(private val context: Context) {
         }
     }
 
+    private class HttpError(val code: Int, message: String, val retryAfterMs: Long?) : Exception(message)
+
+    /** Models that hit their quota (or vanished), and until when to skip them. */
+    private val cooldown = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Preferred model first, then the rest ranked by how much free-tier quota they usually have:
+     * flash-lite, then flash, then everything else, with pro last.
+     */
+    fun candidates(now: Long = System.currentTimeMillis()): List<String> {
+        val st = _state.value
+        val pool = (st.models.ifEmpty { FALLBACK_MODELS } + st.model).distinct()
+        return (listOf(st.model) + rank(pool)).distinct().filter { (cooldown[it] ?: 0L) <= now }
+    }
+
     /**
      * Streams the reply text for [history] (ending with the user's turn).
      * [grounded] enables Google Search so answers about current events are live.
+     * On quota (429), missing model (404) or overload (5xx) before any text arrives, it retries
+     * without search grounding, then fails over to the next model automatically.
      */
     fun stream(system: String, history: List<Turn>, grounded: Boolean): Flow<String> = flow {
         val key = secrets.get(KEY) ?: throw IllegalStateException("No Gemini API key")
+        val models = candidates()
+        if (models.isEmpty()) {
+            val soonest = cooldown.values.minOrNull()?.let { ((it - System.currentTimeMillis()) / 1000).coerceAtLeast(1) }
+            throw IllegalStateException("All Gemini models are out of quota" + (soonest?.let { "; retrying in ${it}s" } ?: ""))
+        }
+        var lastError: Throwable? = null
+        var emitted = false
+        for (model in models) {
+            val modes = if (grounded) listOf(true, false) else listOf(false)
+            for (g in modes) {
+                try {
+                    streamOnce(key, model, system, history, g).collect { emitted = true; emit(it) }
+                    if (_state.value.activeModel != model) {
+                        _state.value = _state.value.copy(
+                            activeModel = model,
+                            status = if (model == _state.value.model) "Connected" else "Using $model (${_state.value.model} out of quota)",
+                        )
+                    }
+                    return@flow
+                } catch (e: HttpError) {
+                    if (emitted) throw e
+                    lastError = e
+                    when (e.code) {
+                        // Grounding has its own quota: first retry the same model without search.
+                        429 -> if (g && grounded) continue else {
+                            cooldown[model] = System.currentTimeMillis() + (e.retryAfterMs ?: 60_000L)
+                            break
+                        }
+                        404, 500, 502, 503, 504 -> {
+                            cooldown[model] = System.currentTimeMillis() + if (e.code == 404) 6 * 3_600_000L else 30_000L
+                            break
+                        }
+                        else -> throw e
+                    }
+                }
+            }
+        }
+        throw IllegalStateException(
+            if ((lastError as? HttpError)?.code == 429) "All Gemini models are out of quota for now" else lastError?.message ?: "Gemini unavailable"
+        )
+    }.flowOn(Dispatchers.IO)
+
+    private fun streamOnce(key: String, model: String, system: String, history: List<Turn>, grounded: Boolean): Flow<String> = flow {
         val body = JSONObject().apply {
             put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             put("contents", JSONArray().apply {
@@ -123,7 +185,6 @@ class GeminiClient(private val context: Context) {
             if (grounded) put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
             put("generationConfig", JSONObject().put("temperature", 0.7).put("maxOutputTokens", 1024))
         }
-        val model = _state.value.model
         val c = (URL("$BASE/models/$model:streamGenerateContent?alt=sse").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
@@ -134,7 +195,10 @@ class GeminiClient(private val context: Context) {
         currentCoroutineContext().job.invokeOnCompletion { runCatching { c.disconnect() } }
         try {
             c.outputStream.use { it.write(body.toString().toByteArray()) }
-            if (c.responseCode !in 200..299) throw IllegalStateException(errorMessage(c))
+            if (c.responseCode !in 200..299) {
+                val raw = runCatching { c.errorStream?.bufferedReader()?.readText() }.getOrNull().orEmpty()
+                throw HttpError(c.responseCode, describe(c.responseCode, raw), retryDelayMs(raw))
+            }
             c.inputStream.bufferedReader().useLines { lines ->
                 for (line in lines) {
                     currentCoroutineContext().ensureActive()
@@ -148,18 +212,20 @@ class GeminiClient(private val context: Context) {
                 }
             }
         } finally { c.disconnect() }
-    }.flowOn(Dispatchers.IO)
+    }
 
-    private fun errorMessage(c: HttpURLConnection): String {
-        val raw = runCatching { c.errorStream?.bufferedReader()?.readText() }.getOrNull().orEmpty()
-        val msg = runCatching { JSONObject(raw).optJSONObject("error")?.optString("message") }.getOrNull()
-        return when (c.responseCode) {
-            400 -> msg?.takeIf { it.isNotBlank() } ?: "Bad request"
+    private fun errorMessage(c: HttpURLConnection): String =
+        describe(c.responseCode, runCatching { c.errorStream?.bufferedReader()?.readText() }.getOrNull().orEmpty())
+
+    private fun describe(code: Int, raw: String): String {
+        val msg = runCatching { JSONObject(raw).optJSONObject("error")?.optString("message") }.getOrNull()?.takeIf { it.isNotBlank() }
+        return when (code) {
+            400 -> msg ?: "Bad request"
             401, 403 -> "API key rejected" + (msg?.let { ": $it" } ?: "")
-            404 -> "Model not found. Pick another in Settings."
-            429 -> "Quota exceeded. Try again later."
-            else -> "HTTP ${c.responseCode}" + (msg?.let { ": $it" } ?: "")
-        }
+            404 -> "Model not found"
+            429 -> "Quota exceeded"
+            else -> "HTTP $code" + (msg?.let { ": $it" } ?: "")
+        }.trimEnd('.')
     }
 
     companion object {
@@ -167,5 +233,24 @@ class GeminiClient(private val context: Context) {
         private const val BASE = "https://generativelanguage.googleapis.com/v1beta"
         /** Used until VERIFY fetches the real model list for the key. */
         const val DEFAULT_MODEL = "gemini-2.5-flash"
+        /** Tried (in ranked order) when the key's model list hasn't been fetched yet. */
+        val FALLBACK_MODELS = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite")
+
+        /** Free-tier friendliness: flash-lite > flash > other > pro; stable before preview; newer first. */
+        fun rank(models: List<String>): List<String> = models.sortedWith(
+            compareBy<String> {
+                when {
+                    it.contains("flash-lite") -> 0
+                    it.contains("flash") -> 1
+                    it.contains("pro") -> 3
+                    else -> 2
+                }
+            }.thenBy { if (it.contains("preview") || it.contains("exp")) 1 else 0 }
+                .thenByDescending { Regex("(\\d+(?:\\.\\d+)?)").find(it)?.value?.toDoubleOrNull() ?: 0.0 }
+        )
+
+        /** Parses RetryInfo.retryDelay ("37s") from a Gemini error body. */
+        fun retryDelayMs(raw: String): Long? = Regex("\"retryDelay\"\\s*:\\s*\"(\\d+(?:\\.\\d+)?)s\"").find(raw)
+            ?.groupValues?.get(1)?.toDoubleOrNull()?.let { (it * 1000).toLong() + 1000 }
     }
 }
