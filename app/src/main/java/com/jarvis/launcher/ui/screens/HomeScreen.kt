@@ -83,6 +83,7 @@ fun HomeScreen(
     lastMessage: ChatMessage?,
     showSeconds: Boolean,
     handsFree: Boolean = false,
+    cloudOnline: Boolean = false,
     onCoreTap: () -> Unit,
     onCoreHold: () -> Unit,
     onOpenDrawer: () -> Unit,
@@ -113,7 +114,7 @@ fun HomeScreen(
             .padding(horizontal = 18.dp),
     ) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            TopStatus(sys, llm, onOpenSettings)
+            TopStatus(sys, llm, cloudOnline, onOpenSettings)
             Spacer(Modifier.height(6.dp))
             HudClock(showSeconds, sys)
 
@@ -170,12 +171,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun TopStatus(sys: SystemSnapshot, llm: LlmState, onOpenSettings: () -> Unit) {
+private fun TopStatus(sys: SystemSnapshot, llm: LlmState, cloud: Boolean, onOpenSettings: () -> Unit) {
     val hud = LocalHud.current
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("J.A.R.V.I.S", style = HudType.title, color = hud.primary)
-            val (label, color) = when (llm.status) {
+            val (label, color) = if (cloud) "GEMINI UPLINK · ONLINE" to hud.secondary else when (llm.status) {
                 CoreStatus.READY -> "NEURAL CORE · ONLINE" to hud.secondary
                 CoreStatus.LOADING -> "NEURAL CORE · BOOTING" to hud.warn
                 CoreStatus.ERROR -> "NEURAL CORE · FAULT" to hud.warn

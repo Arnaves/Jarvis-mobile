@@ -101,23 +101,21 @@ When a neural core is loaded, fact lookups are fed to the LLM as grounding, so i
 - The model can trigger device actions: it emits `ACTION: …`, which is passed to the skill engine above
 - Voice uses Android's on-device speech recogniser (Android 12+) and offline text-to-speech with a British-voice preference
 
-## Installing a model
+## AI brain: Google Gemini
 
-Settings › Neural core has the same steps built in, plus a **Browse models** button.
+1. Get an API key at Google AI Studio (aistudio.google.com) → **Get API key**.
+2. In JARVIS: **⚙ → AI brain · Google Gemini**, paste the key, then tap **Save & verify**.
+   JARVIS checks the key and lists the Gemini models it can use. Pick one (a *flash* model is fast and cheap).
+3. That's it. The status bar shows `GEMINI UPLINK · ONLINE`.
 
-The app ships without a model, because model files are 0.5–4 GB. To add one:
+How requests are routed:
+- **Phone commands** (calls, WhatsApp, timers, torch, volume, tasks, notes) run instantly on-device, without Gemini.
+- **Weather, news, crypto and currency** use their fast dedicated sources.
+- **Everything else** goes to Gemini, with Google Search grounding for facts and current events. That covers conversation, advice, explanations and "what's planned this week?" (it sees your notes). Gemini can also trigger phone actions.
+- **No internet:** commands still work, and the optional offline core (a `.task` file you import) takes over if you have one.
 
-1. Download a MediaPipe-compatible `.task` model on your phone, for example from the
-   [LiteRT community on Hugging Face](https://huggingface.co/litert-community):
-   - **Gemma 3 1B IT (int4)**: about 550 MB. This is the best default.
-   - **Qwen 2.5 1.5B Instruct**: about 1.6 GB. Smarter, but needs 6 GB+ of RAM.
-   - **Gemma 3n E2B / Phi-4-mini**: for flagship phones.
-2. In JARVIS go to **⚙ → Neural core → Import model file**.
-   You can also paste a direct URL, plus a Hugging Face token for gated models, and tap **Download**.
-3. Tap the model to load it. The status changes to `NEURAL CORE · ONLINE`.
-
-For the most reliable offline voice input, install your language under
-*Settings → System → Languages → On-device speech recognition*.
+The key is encrypted with the Android Keystore and only ever sent to Google. When Gemini answers, your question,
+the recent conversation, saved notes and the time/battery are sent to Google.
 
 ## Building
 

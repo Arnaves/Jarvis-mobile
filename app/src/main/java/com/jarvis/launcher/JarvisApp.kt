@@ -31,6 +31,7 @@ class JarvisApp : Application() {
     lateinit var web: WebKnowledge; private set
     lateinit var handsFree: HandsFree; private set
     lateinit var tasks: com.jarvis.launcher.ai.TaskEngine; private set
+    lateinit var gemini: com.jarvis.launcher.ai.GeminiClient; private set
 
     /** Fires when a charger is connected (UI plays the power-surge animation). */
     val powerSurge = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -57,7 +58,8 @@ class JarvisApp : Application() {
         tasks = com.jarvis.launcher.ai.TaskEngine(this, prefs)
         val concierge = com.jarvis.launcher.ai.Concierge(this, prefs, contacts, apps)
         val briefing = com.jarvis.launcher.ai.Briefing(prefs, tasks, monitor, web)
-        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge, briefing)
+        gemini = com.jarvis.launcher.ai.GeminiClient(this)
+        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge, briefing, gemini)
         tasks.executor = { cmd -> assistant.submit(cmd) }
         tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
         tasks.rearm()

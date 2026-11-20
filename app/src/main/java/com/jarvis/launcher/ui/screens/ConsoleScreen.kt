@@ -77,6 +77,7 @@ fun ConsoleScreen(
     mode: CoreMode,
     voice: VoiceState,
     llm: LlmState,
+    cloudOnline: Boolean = false,
     onSend: (String) -> Unit,
     onMic: () -> Unit,
     onStop: () -> Unit,
@@ -105,7 +106,7 @@ fun ConsoleScreen(
             Column(Modifier.weight(1f)) {
                 Text("J.A.R.V.I.S CONSOLE", style = HudType.title, color = hud.primary)
                 Text(
-                    when (llm.status) {
+                    if (cloudOnline) "GEMINI UPLINK · LIVE SEARCH" else when (llm.status) {
                         CoreStatus.READY -> "NEURAL CORE · ${llm.modelName?.uppercase()?.take(28)}"
                         CoreStatus.LOADING -> "NEURAL CORE · BOOTING…"
                         CoreStatus.ERROR -> "NEURAL CORE · FAULT"
@@ -226,6 +227,7 @@ private fun MessageBubble(m: ChatMessage, ghost: Boolean = false) {
                         ChatMessage.Source.NEURAL -> "JARVIS · NEURAL"
                         ChatMessage.Source.SYSTEM -> "JARVIS · SYSTEM"
                         ChatMessage.Source.WEB -> "JARVIS · UPLINK"
+                        ChatMessage.Source.CLOUD -> "JARVIS · GEMINI"
                         else -> "JARVIS · COMMAND"
                     },
                     style = HudType.label.copy(fontSize = 8.sp), color = hud.textDim,

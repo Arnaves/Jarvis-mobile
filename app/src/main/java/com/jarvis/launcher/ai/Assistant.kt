@@ -28,7 +28,7 @@ data class ChatMessage(
     val streaming: Boolean = false,
     val source: Source = Source.SKILL,
 ) {
-    enum class Source { USER, SKILL, NEURAL, SYSTEM, WEB }
+    enum class Source { USER, SKILL, NEURAL, SYSTEM, WEB, CLOUD }
 }
 
 enum class CoreMode { IDLE, LISTENING, THINKING, SPEAKING }
@@ -49,7 +49,9 @@ class Assistant(
     private val tasks: TaskEngine,
     private val concierge: Concierge,
     private val briefing: Briefing,
+    private val gemini: GeminiClient,
 ) {
+    private val geminiHistory = ArrayList<GeminiClient.Turn>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ids = AtomicLong(0)
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -73,12 +75,16 @@ class Assistant(
     val voiceState get() = voice.state
 
     init {
-        skills.setLlmReadyProvider { llm.isReady }
+        skills.setLlmReadyProvider { llm.isReady || gemini.available }
     }
 
     fun greet() {
         if (_messages.value.isNotEmpty()) return
-        val core = if (llm.isReady) "Neural core online." else "Command systems online."
+        val core = when {
+            gemini.available -> "Gemini uplink online."
+            llm.isReady -> "Neural core online."
+            else -> "Command systems online."
+        }
         post("${skills.timeGreeting()}, ${prefs.userTitle.value}. $core How can I help?", ChatMessage.Source.SYSTEM, speak = false)
     }
 
@@ -104,6 +110,7 @@ class Assistant(
         cancel()
         _messages.value = emptyList()
         llm.resetConversation()
+        geminiHistory.clear()
     }
 
     fun submit(raw: String) {
@@ -141,9 +148,13 @@ class Assistant(
         }
         val webQuery = if (prefs.webEnabled.value) web.classify(text) else null
         when {
-            // Live data (weather, news, prices) always comes from the network; facts too when no LLM.
-            webQuery != null && (webQuery !is WebKnowledge.Query.Fact || !llm.isReady) ->
-                generation = scope.launch { askWeb(webQuery) }
+            // Structured live data (weather, news, prices, currency) has fast dedicated sources.
+            webQuery != null && webQuery !is WebKnowledge.Query.Fact -> generation = scope.launch { askWeb(webQuery) }
+            // Gemini answers everything else; facts and current events are grounded with Google Search.
+            gemini.available -> generation = scope.launch {
+                askGemini(text, grounded = webQuery is WebKnowledge.Query.Fact || currentEvents.containsMatchIn(text.lowercase()))
+            }
+            webQuery != null && !llm.isReady -> generation = scope.launch { askWeb(webQuery) }
             llm.isReady -> generation = scope.launch {
                 askNeural(text, (webQuery as? WebKnowledge.Query.Fact)?.subject)
             }
@@ -153,7 +164,8 @@ class Assistant(
             }
             else -> post(
                 "That's beyond my offline command set, ${prefs.userTitle.value}. " +
-                    "Install a neural core in Settings and I can answer anything, even offline.",
+                    if (gemini.state.value.hasKey) "I need an internet connection for Gemini to answer that."
+                    else "Add your Gemini API key in Settings and I can answer anything.",
                 ChatMessage.Source.SYSTEM,
             )
         }
@@ -169,7 +181,7 @@ class Assistant(
             thinking.value = false
         }
         val shown = if (!allowBrowser && a.fallbackSearch != null)
-            "I don't have an answer for that offline, ${prefs.userTitle.value}. Install a neural core in Settings for open conversation, or say \"search the web for …\"."
+            "I don't have an answer for that yet, ${prefs.userTitle.value}. Add your Gemini API key in Settings for full conversation, or say \"search the web for …\"."
         else a.text
         update(id, shown, streaming = false)
         a.permission?.let { _events.tryEmit(AssistantEvent.RequestPermission(it)) }
@@ -222,6 +234,77 @@ class Assistant(
             deliver(actionReply)
         } else if (prefs.voiceReplies.value) {
             speaker.speak(answer)
+        }
+    }
+
+    private val currentEvents = Regex("\\b(today|tonight|latest|current|currently|now|news|score|won|winner|price|stock|election|this week|this year|recent|happening)\\b")
+
+    private suspend fun askGemini(text: String, grounded: Boolean) {
+        val id = ids.incrementAndGet()
+        add(ChatMessage(id, false, "", streaming = true, source = ChatMessage.Source.CLOUD))
+        thinking.value = true
+        geminiHistory += GeminiClient.Turn(true, text)
+        while (geminiHistory.size > 20) geminiHistory.removeAt(0)
+        val sb = StringBuilder()
+        var failed: Throwable? = null
+        try {
+            gemini.stream(systemInstruction(cloud = true), geminiHistory.toList(), grounded).collect { delta ->
+                sb.append(delta)
+                update(id, visible(sb.toString()), streaming = true)
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) {
+                update(id, visible(sb.toString()).ifBlank { "Cancelled." }, streaming = false)
+                thinking.value = false
+                throw t
+            }
+            failed = t
+        }
+        thinking.value = false
+        if (failed != null && sb.isEmpty()) {
+            geminiHistory.removeLastOrNull()
+            // Uplink failed: fall back to the on-device core if there is one.
+            if (llm.isReady) {
+                _messages.value = _messages.value.filterNot { it.id == id }
+                askNeural(text)
+                return
+            }
+            val msg = "Gemini uplink failed: ${failed.message ?: "unknown error"}."
+            update(id, msg, streaming = false)
+            if (prefs.voiceReplies.value) speaker.speak(msg)
+            return
+        }
+        val full = sb.toString()
+        geminiHistory += GeminiClient.Turn(false, full)
+        val answer = visible(full).ifBlank { "Done." }
+        update(id, answer, streaming = false)
+        val action = Regex("ACTION:\\s*(.+)", RegexOption.IGNORE_CASE).find(full)?.groupValues?.get(1)?.trim()
+        val actionReply = action?.let { runCatching { skills.handle(it) }.getOrNull() }
+        if (actionReply != null) deliver(actionReply)
+        else if (prefs.voiceReplies.value) speaker.speak(answer.replace(Regex("\\[\\d+\\]"), ""))
+    }
+
+    /** Persona, phone-control protocol, the user's notes and live device context. */
+    private fun systemInstruction(cloud: Boolean): String {
+        val now = SimpleDateFormat("EEEE d MMMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+        val s = runCatching { monitor.snapshot() }.getOrNull()
+        val title = prefs.userTitle.value
+        val notes = prefs.notes.value.takeLast(25)
+        return buildString {
+            append("You are JARVIS, a calm, witty and impeccably polite British AI assistant built into the user's Android phone launcher. ")
+            append("Address the user as \"$title\". Replies are spoken aloud: keep them short and conversational (under 80 words), ")
+            append("no markdown, no bullet lists, no URLs, unless the user asks for detail. ")
+            if (cloud) append("You have Google Search for current information; use it for news, facts, sports, prices and anything time-sensitive. ")
+            append("If the user wants the phone to do something, add a final line exactly like `ACTION: <command>` using one of: ")
+            append("open <app name> | set a timer for <n> minutes | set an alarm for <hh:mm> | call <contact> | text <contact> saying <message> | ")
+            append("send a whatsapp to <contact> saying <message> | navigate to <place> | flashlight on | flashlight off | play music | pause music | ")
+            append("volume up | volume down | remember <fact> | note for <today/tomorrow/weekday> <text>. ")
+            append("Only use ACTION when the user clearly asked for that action.\n")
+            append("Current time: $now. Battery: ${s?.batteryPct ?: "?"}%${if (s?.charging == true) " (charging)" else ""}.\n")
+            if (notes.isNotEmpty()) {
+                append("The user's saved notes (use them when relevant, e.g. if asked what's planned or what they told you):\n")
+                notes.forEach { n -> append("- ${n.forDay?.let { "[for ${NoteDates.label(it)}] " } ?: ""}${n.text}\n") }
+            }
         }
     }
 

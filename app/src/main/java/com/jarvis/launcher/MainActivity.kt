@@ -113,6 +113,7 @@ class MainActivity : ComponentActivity() {
         val showSeconds by app.prefs.showSeconds.collectAsStateWithLifecycle()
         val onboarded by app.prefs.onboarded.collectAsStateWithLifecycle()
         val handsFree by app.handsFree.state.collectAsStateWithLifecycle()
+        val gem by app.gemini.state.collectAsStateWithLifecycle()
         var bootDone by remember { mutableStateOf(booted) }
         var surge by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
@@ -145,6 +146,7 @@ class MainActivity : ComponentActivity() {
                 lastMessage = messages.lastOrNull { !it.fromUser },
                 showSeconds = showSeconds,
                 handsFree = handsFree != com.jarvis.launcher.ai.HandsFree.State.OFF,
+                cloudOnline = gem.hasKey && gem.enabled && sys.network != "OFFLINE",
                 onCoreTap = { startListening() },
                 onCoreHold = { screen = Screen.CONSOLE },
                 onOpenDrawer = { screen = Screen.DRAWER },
@@ -172,6 +174,7 @@ class MainActivity : ComponentActivity() {
                     mode = mode,
                     voice = voice,
                     llm = llm,
+                    cloudOnline = gem.hasKey && gem.enabled && sys.network != "OFFLINE",
                     onSend = { app.assistant.submit(it) },
                     onMic = { startListening() },
                     onStop = { app.assistant.cancel() },

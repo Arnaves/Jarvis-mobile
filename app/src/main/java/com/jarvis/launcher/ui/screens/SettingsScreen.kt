@@ -83,6 +83,7 @@ fun SettingsScreen(
     val seconds by prefs.showSeconds.collectAsState()
     val notes by prefs.notes.collectAsState()
     val llm by app.llm.state.collectAsState()
+    val gem by app.gemini.state.collectAsState()
     val handsFree by prefs.handsFree.collectAsState()
     val lockScreen by prefs.lockScreen.collectAsState()
     val webOn by prefs.webEnabled.collectAsState()
@@ -178,6 +179,59 @@ fun SettingsScreen(
                     HudButton(if (micOk) "MIC ✓" else "GRANT MIC", enabled = !micOk) { onRequestPermission(Manifest.permission.RECORD_AUDIO) }
                     HudButton(if (contactsOk) "CONTACTS ✓" else "GRANT CONTACTS", enabled = !contactsOk) { onRequestPermission(Manifest.permission.READ_CONTACTS) }
                 }
+            }
+
+            // ------------------------------------------------ Gemini
+            HudPanel(Modifier.fillMaxWidth(), title = "AI brain · Google Gemini", accent = hud.secondary) {
+                Text(
+                    "Paste your Gemini API key (from Google AI Studio). It's stored encrypted with this phone's hardware keystore " +
+                        "and only ever sent to Google. With it, JARVIS answers anything, with live Google Search, remembers the " +
+                        "conversation and uses your notes. Phone commands still run on-device.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(10.dp))
+                var keyInput by remember { mutableStateOf("") }
+                var verifying by remember { mutableStateOf(false) }
+                if (!gem.hasKey) {
+                    HudField(keyInput, "Gemini API key (AIza…)", secret = true) { keyInput = it.trim() }
+                    Spacer(Modifier.height(8.dp))
+                    HudButton("SAVE & VERIFY", enabled = keyInput.length >= 20 && !verifying) {
+                        app.gemini.setKey(keyInput)
+                        keyInput = ""
+                        verifying = true
+                        app.appScope.launch { app.gemini.verify(); verifying = false }
+                    }
+                } else {
+                    Text(
+                        (if (gem.verified) "● " else "○ ") + gem.status.uppercase(),
+                        style = HudType.data, color = if (gem.verified) hud.secondary else hud.warn,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    ToggleRow("Use Gemini", gem.enabled) { app.gemini.setEnabled(it) }
+                    if (gem.models.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("MODEL", style = HudType.label, color = hud.textDim)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            gem.models.take(8).forEach { m -> Chip(m, selected = gem.model == m) { app.gemini.setModel(m) } }
+                        }
+                    } else {
+                        Text("MODEL · ${gem.model}", style = HudType.label, color = hud.textDim)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HudButton(if (verifying) "VERIFYING…" else "VERIFY", enabled = !verifying) {
+                            verifying = true
+                            app.appScope.launch { app.gemini.verify(); verifying = false }
+                        }
+                        HudButton("REMOVE KEY") { app.gemini.clearKey() }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Privacy: when Gemini answers, your question, recent conversation, saved notes and the time/battery are sent to Google.",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
             }
 
             // ------------------------------------------------ Hands-free + lock screen
@@ -376,7 +430,7 @@ fun SettingsScreen(
             }
 
             // ------------------------------------------------ Neural core
-            HudPanel(Modifier.fillMaxWidth(), title = "Neural core · on-device LLM", accent = hud.secondary) {
+            HudPanel(Modifier.fillMaxWidth(), title = "Offline core (optional)") {
                 val statusColor = when (llm.status) {
                     CoreStatus.READY -> hud.secondary
                     CoreStatus.ERROR -> hud.warn
@@ -395,25 +449,10 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "The neural core is an AI model that runs entirely on this phone, so JARVIS can answer anything, " +
-                        "hold a conversation and use your notes, even with no internet.",
+                    "Optional offline brain: a MediaPipe .task model file stored on this phone, used when Gemini is " +
+                        "unavailable (no internet). Import one you already have on the device.",
                     style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
                 )
-                Spacer(Modifier.height(8.dp))
-                Text("HOW TO INSTALL", style = HudType.label, color = hud.secondary)
-                listOf(
-                    "1. Tap BROWSE MODELS (opens the LiteRT community on Hugging Face).",
-                    "2. Pick Gemma3-1B-IT (best start, ~550 MB) or Qwen2.5-1.5B-Instruct (smarter, needs 6 GB+ RAM).",
-                    "3. Gemma: sign in and tap \"Agree and access\" once (free).",
-                    "4. Open \"Files and versions\" and download a file ending in .task (int4 / q4 if offered).",
-                    "5. Come back and tap IMPORT MODEL FILE, choose it from Downloads, then tap it below to load.",
-                ).forEach { Text(it, style = HudType.body.copy(fontSize = 13.sp), color = hud.text) }
-                Spacer(Modifier.height(8.dp))
-                HudButton("BROWSE MODELS") {
-                    runCatching {
-                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://huggingface.co/litert-community")))
-                    }
-                }
                 Spacer(Modifier.height(12.dp))
 
                 if (models.isNotEmpty()) {
@@ -500,8 +539,8 @@ fun SettingsScreen(
                 Text("JARVIS Launcher v${BuildConfig.VERSION_NAME}", style = HudType.data, color = hud.text)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Privacy: voice, conversations, memories and the AI model never leave this device. " +
-                        "Network is only used if you choose to download a model or search the web.",
+                    "Privacy: voice recognition, the wake word, notes and the offline core stay on this device. " +
+                        "Gemini answers and web lookups send only what's needed for that request.",
                     style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
                 )
             }
