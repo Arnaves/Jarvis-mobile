@@ -114,7 +114,7 @@ class Assistant(
     }
 
     fun submit(raw: String) {
-        val text = raw.trim()
+        val text = stripWake(raw.trim())
         if (text.isEmpty()) return
         voice.clearError()
         speaker.stop()
@@ -194,6 +194,14 @@ class Assistant(
 
     /** True when JARVIS is neither thinking, listening nor talking. */
     val isIdle: Boolean get() = mode.value == CoreMode.IDLE
+
+    /** "Hey Friday, open camera" -> "open camera" (the default "jarvis" is also handled downstream). */
+    private fun stripWake(t: String): String {
+        val w = prefs.wakeWord.value
+        if (w == com.jarvis.launcher.data.Prefs.DEFAULT_WAKE) return t
+        val p = w.split(' ').joinToString("\\s+") { Regex.escape(it) }
+        return t.replace(Regex("^(?:(?:hey|ok|okay|hi|hello)\\s+)?$p[,.!]?\\s*", RegexOption.IGNORE_CASE), "").ifBlank { t }
+    }
 
     private fun deliver(reply: Reply) {
         post(reply.text, ChatMessage.Source.SKILL)

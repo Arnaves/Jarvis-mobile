@@ -54,6 +54,14 @@ class Prefs(context: Context) {
     fun setLockScreen(v: Boolean) { _lockScreen.value = v; sp.edit().putBoolean(KEY_LOCK, v).apply() }
     fun setWebEnabled(v: Boolean) { _web.value = v; sp.edit().putBoolean(KEY_WEB, v).apply() }
 
+    private val _wakeWord = MutableStateFlow(sp.getString("wake_word", DEFAULT_WAKE)!!)
+    /** Lower-case wake phrase, 1–3 words (default "jarvis"). */
+    val wakeWord: StateFlow<String> = _wakeWord.asStateFlow()
+    fun setWakeWord(v: String) {
+        val w = v.lowercase().replace(Regex("[^\\p{L} ]"), " ").replace(Regex("\\s+"), " ").trim().ifBlank { DEFAULT_WAKE }
+        _wakeWord.value = w; sp.edit().putString("wake_word", w).apply()
+    }
+
     private val _wakeSensitivity = MutableStateFlow(sp.getString("wake_sens", "NORMAL")!!)
     val wakeSensitivity: StateFlow<String> = _wakeSensitivity.asStateFlow()
     fun setWakeSensitivity(v: String) { _wakeSensitivity.value = v; sp.edit().putString("wake_sens", v).apply() }
@@ -121,6 +129,14 @@ class Prefs(context: Context) {
 
     companion object {
         const val MAX_DOCK = 5
+        const val DEFAULT_WAKE = "jarvis"
+
+        /** How the wake phrase is shown/said: "Hey Jarvis" for one word, the phrase itself otherwise. */
+        fun wakeDisplay(w: String): String {
+            val words = w.split(' ').filter { it.isNotBlank() }
+            val cap = words.joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            return if (words.size == 1) "Hey $cap" else cap
+        }
         private const val KEY_PINNED = "pinned"
         private const val KEY_MEMORIES = "memories"
         private const val KEY_NOTES = "notes_v2"

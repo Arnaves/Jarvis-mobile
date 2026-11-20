@@ -84,6 +84,7 @@ fun HomeScreen(
     showSeconds: Boolean,
     handsFree: Boolean = false,
     cloudOnline: Boolean = false,
+    wakeWord: String = "jarvis",
     onCoreTap: () -> Unit,
     onCoreHold: () -> Unit,
     onOpenDrawer: () -> Unit,
@@ -150,7 +151,7 @@ fun HomeScreen(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            CoreCaption(mode, voice, handsFree)
+            CoreCaption(mode, voice, handsFree, wakeWord)
 
             Spacer(Modifier.height(14.dp))
             ResponseTicker(lastMessage, voice, onOpenConsole)
@@ -258,14 +259,14 @@ private fun SideTelemetry(items: List<Pair<String, String>>, align: Alignment.Ho
 }
 
 @Composable
-private fun CoreCaption(mode: CoreMode, voice: VoiceState, handsFree: Boolean) {
+private fun CoreCaption(mode: CoreMode, voice: VoiceState, handsFree: Boolean, wakeWord: String) {
     val hud = LocalHud.current
     val text = when {
         voice.error != null -> voice.error.uppercase()
         mode == CoreMode.LISTENING -> "LISTENING…"
         mode == CoreMode.THINKING -> "PROCESSING…"
         mode == CoreMode.SPEAKING -> "TRANSMITTING"
-        handsFree -> "SAY “HEY JARVIS” · OR TAP THE CORE"
+        handsFree -> "SAY “${com.jarvis.launcher.data.Prefs.wakeDisplay(wakeWord)}” · OR TAP THE CORE"
         else -> "TAP CORE TO SPEAK · HOLD FOR CONSOLE"
     }
     AnimatedContent(text, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) }, label = "cap") {

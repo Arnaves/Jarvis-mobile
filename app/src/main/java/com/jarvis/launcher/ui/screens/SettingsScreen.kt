@@ -92,6 +92,8 @@ fun SettingsScreen(
     val wakeProgress by app.handsFree.models.progress.collectAsState()
     val lastHeard by app.handsFree.lastHeard.collectAsState()
     val sensitivity by prefs.wakeSensitivity.collectAsState()
+    val wakeWord by prefs.wakeWord.collectAsState()
+    val wakeName = com.jarvis.launcher.data.Prefs.wakeDisplay(wakeWord)
     var wakeError by remember { mutableStateOf<String?>(null) }
     val tasks by app.tasks.tasks.collectAsState()
     val places by app.tasks.places.collectAsState()
@@ -235,21 +237,53 @@ fun SettingsScreen(
             }
 
             // ------------------------------------------------ Hands-free + lock screen
-            HudPanel(Modifier.fillMaxWidth(), title = "Hands-free · \"Hey JARVIS\"", accent = hud.secondary) {
-                ToggleRow("Always listen for \"Hey JARVIS\"", handsFree) { on ->
+            HudPanel(Modifier.fillMaxWidth(), title = "Hands-free · \"$wakeName\"", accent = hud.secondary) {
+                ToggleRow("Always listen for \"$wakeName\"", handsFree) { on ->
                     prefs.setHandsFree(on)
                     if (on) onRequestPermission(Manifest.permission.RECORD_AUDIO)
                     com.jarvis.launcher.service.JarvisService.sync(ctx)
                 }
                 Text(
-                    "Say \"Hey JARVIS\". He answers \"Yes, $title?\" and listens for 5 seconds, then goes back to standby. " +
-                        "Works with the screen off and over other apps. You can also say it in one breath: \"Hey JARVIS, what's the weather?\"",
+                    "Say \"$wakeName\". He answers \"Yes, $title?\" and listens for 5 seconds, then goes back to standby. " +
+                        "Works with the screen off and over other apps. You can also say it in one breath: \"$wakeName, what's the weather?\"",
                     style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "STATUS · ${hfState.name}" + (engine?.let { " · ${it.uppercase()}" } ?: ""),
                     style = HudType.label, color = if (hfState == com.jarvis.launcher.ai.HandsFree.State.OFF) hud.textDim else hud.secondary,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text("WAKE WORD", style = HudType.label, color = hud.textDim)
+                Spacer(Modifier.height(6.dp))
+                var wakeInput by remember(wakeWord) { mutableStateOf(wakeWord) }
+                var wakeMsg by remember { mutableStateOf<String?>(null) }
+                HudField(wakeInput, "e.g. jarvis, friday, edith, computer") { wakeInput = it; wakeMsg = null }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val cleaned = wakeInput.lowercase().replace(Regex("[^\\p{L} ]"), " ").replace(Regex("\\s+"), " ").trim()
+                    val words = cleaned.split(' ').filter { it.isNotBlank() }
+                    val valid = words.size in 1..3 && cleaned.length >= 3 && words.none { it in setOf("hey", "ok", "okay", "hi", "hello") && words.size == 1 }
+                    HudButton("SAVE WAKE WORD", enabled = valid && cleaned != wakeWord) {
+                        app.appScope.launch {
+                            val unknown = app.handsFree.models.unknownWords(words)
+                            if (unknown.isNotEmpty() && app.handsFree.models.ready) {
+                                wakeMsg = "The offline engine doesn't know \"${unknown.joinToString(" ")}\". Try another word (or it will rely on the system recogniser)."
+                            } else {
+                                prefs.setWakeWord(cleaned)
+                                wakeMsg = "Saved. Say \"${com.jarvis.launcher.data.Prefs.wakeDisplay(cleaned)}\"."
+                            }
+                        }
+                    }
+                    if (wakeWord != com.jarvis.launcher.data.Prefs.DEFAULT_WAKE) {
+                        HudButton("RESET") { prefs.setWakeWord(com.jarvis.launcher.data.Prefs.DEFAULT_WAKE); wakeMsg = "Back to \"Hey Jarvis\"." }
+                    }
+                }
+                wakeMsg?.let { Text(it, style = HudType.body.copy(fontSize = 12.sp), color = if (it.startsWith("Saved") || it.startsWith("Back")) hud.secondary else hud.warn) }
+                Text(
+                    "Pick a distinctive word with 2+ syllables (\"Friday\", \"Edith\", \"Computer\"). " +
+                        "One word means you say \"Hey <word>\"; for two or three words, say them exactly.",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
                 )
                 Spacer(Modifier.height(10.dp))
                 Text("WAKE SENSITIVITY", style = HudType.label, color = hud.textDim)
@@ -269,7 +303,7 @@ fun SettingsScreen(
                         Column {
                             Text("LIVE · WHAT JARVIS HEARS", style = HudType.label, color = hud.textDim)
                             Text(
-                                lastHeard.ifBlank { "Say \"Hey JARVIS\"…" },
+                                lastHeard.ifBlank { "Say \"$wakeName\"…" },
                                 style = HudType.data, color = if (lastHeard.startsWith("✓")) hud.secondary else hud.text, maxLines = 2,
                             )
                         }

@@ -37,8 +37,6 @@ interface WakeEngine {
     fun stop()
 }
 
-// The system recogniser transcribes accurately ("Hey, Jarvis."), so any mention of the name counts.
-private val WAKE = Regex("\\b(jarvis|jervis|jarvas|javis|jarvus)\\b[,.!?]?\\s*(.*)", RegexOption.IGNORE_CASE)
 
 enum class WakeSensitivity(val label: String, val withPrefix: Double, val alone: Double, val stablePartials: Int) {
     LOW("Strict", 0.90, 0.97, 3),
@@ -48,48 +46,66 @@ enum class WakeSensitivity(val label: String, val withPrefix: Double, val alone:
 }
 
 /**
- * Decides whether Vosk really heard "hey JARVIS". Pure functions so they are unit-tested.
+ * Decides whether Vosk really heard the wake phrase. Pure functions so they are unit-tested.
+ * [phrase] is the lower-case wake phrase split into words, e.g. ["jarvis"] or ["hey", "friday"].
  */
 object WakeDecision {
-    private val prefixes = setOf("hey", "okay", "ok", "hi", "hello")
-    private val wakeWords = setOf("jarvis")
+    val prefixes = setOf("hey", "okay", "ok", "hi", "hello")
+    private val DEFAULT = listOf("jarvis")
+
+    fun words(phrase: String) = phrase.lowercase().split(' ').filter { it.isNotBlank() }
 
     /** Final result with words: {"result":[{"word":"hey","conf":0.98}, ...], "text":"hey jarvis"} */
-    fun isWake(resultJson: String?, s: WakeSensitivity = WakeSensitivity.NORMAL): Boolean {
+    fun isWake(resultJson: String?, s: WakeSensitivity = WakeSensitivity.NORMAL, phrase: List<String> = DEFAULT): Boolean {
+        if (phrase.isEmpty()) return false
         val o = runCatching { JSONObject(resultJson ?: return false) }.getOrNull() ?: return false
-        val words = o.optJSONArray("result") ?: return false
-        val list = List(words.length()) { words.optJSONObject(it) }.filterNotNull()
-        for ((i, w) in list.withIndex()) {
-            if (w.optString("word") !in wakeWords) continue
-            val conf = w.optDouble("conf", 0.0)
+        val arr = o.optJSONArray("result") ?: return false
+        val list = List(arr.length()) { arr.optJSONObject(it) }.filterNotNull()
+        val n = phrase.size
+        for (i in 0..list.size - n) {
+            if ((0 until n).any { list[i + it].optString("word") != phrase[it] }) continue
+            val conf = (0 until n).minOf { list[i + it].optDouble("conf", 0.0) }
+            if (n >= 2) { if (conf >= s.withPrefix) return true; continue }
             val prev = list.getOrNull(i - 1)?.optString("word")
             if (prev in prefixes && conf >= s.withPrefix) return true
-            // "Jarvis" on its own (the "hey" is often swallowed) needs higher confidence and a short utterance.
+            // The name on its own (the "hey" is often swallowed) needs higher confidence and a short utterance.
             if (list.size <= 2 && conf >= s.alone) return true
         }
         return false
     }
 
-    /** Partial hypotheses carry no confidence, so only the full two-word phrase counts. */
-    fun partialHasPhrase(partialJson: String?): Boolean {
+    /** Partial hypotheses carry no confidence, so only the full phrase (with "hey" for one-word names) counts. */
+    fun partialHasPhrase(partialJson: String?, phrase: List<String> = DEFAULT): Boolean {
+        if (phrase.isEmpty()) return false
         val t = runCatching { JSONObject(partialJson ?: return false).optString("partial") }.getOrDefault("")
-        return Regex("\\b(hey|okay|ok|hi|hello) jarvis\\b").containsMatchIn(t)
+        val p = phrase.joinToString(" ") { Regex.escape(it) }
+        val re = if (phrase.size == 1) Regex("\\b(hey|okay|ok|hi|hello) $p\\b") else Regex("\\b$p\\b")
+        return re.containsMatchIn(t)
     }
 
+    private val filler = listOf(
+        "hey", "hi", "okay", "ok", "hello", "yes", "no", "yeah", "right", "well", "so", "but",
+        "a", "the", "and", "is", "it", "this", "that", "what", "you", "i", "of", "to", "in",
+        "we", "they", "he", "she", "do", "go", "come", "here", "there", "now", "good", "one",
+    )
+
     /**
-     * Grammar for the spotter: the wake phrases, generic filler that soaks up everyday speech,
-     * and [unk]. Deliberately *no* close sound-alikes ("jervis", "travis"…): with accents those
-     * stole real wake words.
+     * Grammar for the spotter: the wake phrase (with greeting variants for one-word names),
+     * generic filler that soaks up everyday speech, and [unk]. No close sound-alikes.
      */
-    val grammar: String = org.json.JSONArray(
-        listOf(
-            "hey jarvis", "okay jarvis", "ok jarvis", "hi jarvis", "hello jarvis", "jarvis",
-            "hey", "hi", "okay", "ok", "hello", "yes", "no", "yeah", "right", "well", "so", "but",
-            "a", "the", "and", "is", "it", "this", "that", "what", "you", "i", "of", "to", "in",
-            "we", "they", "he", "she", "do", "go", "come", "here", "there", "now", "good", "one",
-            "[unk]",
-        )
-    ).toString()
+    fun grammar(phrase: List<String> = DEFAULT): String {
+        val p = phrase.joinToString(" ")
+        val wake = if (phrase.size == 1) listOf(p) + prefixes.map { "$it $p" } else listOf(p)
+        val rest = filler.filter { it !in phrase }
+        return org.json.JSONArray(wake + rest + "[unk]").toString()
+    }
+
+    /** Regex for the system-recogniser fallback (accurate transcripts, so any mention counts). */
+    fun transcriptRegex(phrase: List<String>): Regex {
+        val p = phrase.joinToString("\\s+") { Regex.escape(it) }
+        val alt = if (phrase == DEFAULT) "(?:jarvis|jervis|jarvas|javis|jarvus)" else "(?:$p)"
+        return Regex("\\b$alt\\b[,.!?]?\\s*(.*)", RegexOption.IGNORE_CASE)
+    }
 }
 
 /**
@@ -97,7 +113,11 @@ object WakeDecision {
  * low CPU. Fires on a confident final result, or on the full phrase seen in consecutive partials
  * (so it still works in noisy rooms where the utterance never "ends").
  */
-class VoskWakeEngine(private val modelDir: File, private val sensitivity: () -> WakeSensitivity) : WakeEngine {
+class VoskWakeEngine(
+    private val modelDir: File,
+    private val sensitivity: () -> WakeSensitivity,
+    private val phrase: () -> List<String>,
+) : WakeEngine {
     override val label = "Vosk offline keyword spotter"
     override var onHeard: ((String) -> Unit)? = null
     override var onFailure: (() -> Unit)? = null
@@ -119,7 +139,8 @@ class VoskWakeEngine(private val modelDir: File, private val sensitivity: () -> 
         fired = false
         stable = 0
         val ok = runCatching {
-            val rec = Recognizer(m, 16000f, WakeDecision.grammar)
+            val words = phrase()
+            val rec = Recognizer(m, 16000f, WakeDecision.grammar(words))
             rec.setWords(true)
             recognizer = rec
             val svc = SpeechService(rec, 16000f)
@@ -133,7 +154,7 @@ class VoskWakeEngine(private val modelDir: File, private val sensitivity: () -> 
                 override fun onPartialResult(hypothesis: String?) {
                     val text = runCatching { JSONObject(hypothesis ?: "{}").optString("partial") }.getOrDefault("")
                     if (text.isNotBlank()) onHeard?.invoke("… $text")
-                    stable = if (WakeDecision.partialHasPhrase(hypothesis)) stable + 1 else 0
+                    stable = if (WakeDecision.partialHasPhrase(hypothesis, words)) stable + 1 else 0
                     if (stable >= sensitivity().stablePartials) fire()
                 }
                 override fun onResult(hypothesis: String?) {
@@ -142,12 +163,12 @@ class VoskWakeEngine(private val modelDir: File, private val sensitivity: () -> 
                     if (text.isNotBlank()) {
                         val conf = o?.optJSONArray("result")?.let { arr ->
                             (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-                                .firstOrNull { it.optString("word") == "jarvis" }?.optDouble("conf")
+                                .firstOrNull { it.optString("word") == words.last() }?.optDouble("conf")
                         }
-                        onHeard?.invoke(text + (conf?.let { " (jarvis %.0f%%)".format(it * 100) } ?: ""))
+                        onHeard?.invoke(text + (conf?.let { " (${words.last()} %.0f%%)".format(it * 100) } ?: ""))
                     }
                     stable = 0
-                    if (WakeDecision.isWake(hypothesis, sensitivity())) fire()
+                    if (WakeDecision.isWake(hypothesis, sensitivity(), words)) fire()
                 }
                 override fun onFinalResult(hypothesis: String?) {}
                 override fun onError(exception: Exception?) {
@@ -172,7 +193,7 @@ class VoskWakeEngine(private val modelDir: File, private val sensitivity: () -> 
  * Fallback that loops the platform recogniser. Works without extra downloads, but some
  * devices play a short chime each time it restarts.
  */
-class RecognizerLoopWakeEngine(private val context: Context) : WakeEngine {
+class RecognizerLoopWakeEngine(private val context: Context, private val phrase: () -> List<String>) : WakeEngine {
     override val label = "System recogniser loop"
     override var onHeard: ((String) -> Unit)? = null
     override var onFailure: (() -> Unit)? = null
@@ -206,10 +227,10 @@ class RecognizerLoopWakeEngine(private val context: Context) : WakeEngine {
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onResults(results: Bundle?) {
                 val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-                val m = WAKE.find(t)
+                val m = WakeDecision.transcriptRegex(phrase()).find(t)
                 if (t.isNotBlank()) onHeard?.invoke(t)
                 if (m != null && active) {
-                    val rest = m.groupValues[2].trim().takeIf { it.split(' ').size >= 2 }
+                    val rest = m.groupValues[1].trim().takeIf { it.split(' ').size >= 2 }
                     val cb = callback
                     stop()
                     cb?.invoke(rest)
@@ -309,6 +330,25 @@ class WakeModelStore(private val context: Context) {
         } finally {
             _progress.value = null
         }
+    }
+
+    /**
+     * Words the offline model can't recognise (it silently drops them from the grammar).
+     * Empty if all are known, or if the model ships no word list to check against.
+     */
+    suspend fun unknownWords(words: List<String>): List<String> = withContext(Dispatchers.IO) {
+        if (!ready) installFromAssets()
+        val list = File(dir, "graph/words.txt").takeIf { it.isFile } ?: return@withContext emptyList()
+        val wanted = words.toMutableSet()
+        runCatching {
+            list.bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    wanted.remove(line.substringBefore(' '))
+                    if (wanted.isEmpty()) break
+                }
+            }
+        }
+        words.filter { it in wanted }
     }
 
     companion object {

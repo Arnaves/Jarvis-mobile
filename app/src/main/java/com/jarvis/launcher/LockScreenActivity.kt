@@ -86,6 +86,7 @@ class LockScreenActivity : ComponentActivity() {
                 val messages by app.assistant.messages.collectAsStateWithLifecycle()
                 val hf by app.handsFree.state.collectAsStateWithLifecycle()
                 val seconds by app.prefs.showSeconds.collectAsStateWithLifecycle()
+                val wake by app.prefs.wakeWord.collectAsStateWithLifecycle()
                 Box(Modifier.fillMaxSize()) {
                     HudBackground()
                     LockScreen(
@@ -94,6 +95,7 @@ class LockScreenActivity : ComponentActivity() {
                         voice = voice,
                         lastMessage = messages.lastOrNull { !it.fromUser },
                         handsFree = hf != HandsFree.State.OFF,
+                        wakeWord = wake,
                         showSeconds = seconds,
                         unlockSignal = unlockSignal,
                         surge = surge,

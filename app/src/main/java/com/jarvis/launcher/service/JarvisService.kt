@@ -120,7 +120,7 @@ class JarvisService : Service() {
         )
         val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_jarvis)
-            .setContentTitle(if (listening) "Listening for \"Hey JARVIS\"" else "JARVIS lock screen active")
+            .setContentTitle(if (listening) "Listening for \"${com.jarvis.launcher.data.Prefs.wakeDisplay(app.prefs.wakeWord.value)}\"" else "JARVIS lock screen active")
             .setContentText(if (listening) "Voice stays on this device." else "Shown each time the screen turns on.")
             .setOngoing(true)
             .setSilent(true)

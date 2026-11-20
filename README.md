@@ -20,6 +20,8 @@ Live internet lookups are optional; when one runs, only that question is sent.
 - Say **"Hey JARVIS"** at any time: on the home screen, inside other apps, or with the screen off.
   He replies **"Yes, sir?"** and listens for **5 seconds**. If you say nothing, he goes back to standby.
 - You can say it in one breath: *"Hey JARVIS, what's the weather in Tokyo?"*
+- **Custom wake word:** Settings › Hands-free › Wake word, e.g. "Friday" (say "Hey Friday") or a 2–3 word phrase.
+  It's checked against the offline engine's vocabulary when you save, and takes effect immediately.
 - Wake-word detection uses **Vosk**, which is offline, silent and low-power. It only triggers on the full phrase
   "hey / ok / hi JARVIS" with high word confidence, and a set of sound-alike decoy words absorbs everyday speech and noise. The model is bundled in CI builds;
   for local builds, install it in Settings with one tap. Until it's installed, JARVIS falls back to the system

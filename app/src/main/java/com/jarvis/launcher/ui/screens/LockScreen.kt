@@ -75,6 +75,7 @@ fun LockScreen(
     voice: VoiceState,
     lastMessage: ChatMessage?,
     handsFree: Boolean,
+    wakeWord: String = "jarvis",
     showSeconds: Boolean,
     unlockSignal: Int,
     surge: Boolean = false,
@@ -187,7 +188,7 @@ fun LockScreen(
                 mode == CoreMode.LISTENING -> "LISTENING…"
                 mode == CoreMode.THINKING -> "PROCESSING…"
                 intro.value < 1f -> "IDENTITY SCAN ${(intro.value * 100).toInt()}%"
-                handsFree -> "SAY “HEY JARVIS”"
+                handsFree -> "SAY “${com.jarvis.launcher.data.Prefs.wakeDisplay(wakeWord)}”"
                 else -> "TAP MIC TO SPEAK"
             }
             Text(caption.uppercase(), style = HudType.label, color = hud.textDim, textAlign = TextAlign.Center)

@@ -50,6 +50,14 @@ class HandsFree(
 
     val isEnabled: Boolean get() = enabled
 
+    init {
+        // A new wake word takes effect immediately.
+        scope.launch {
+            var first = true
+            prefs.wakeWord.collect { if (first) first = false else { voskFailures = 0; reload() } }
+        }
+    }
+
     fun enable() {
         if (enabled) return
         enabled = true
@@ -95,10 +103,14 @@ class HandsFree(
     private suspend fun pickEngine(): WakeEngine {
         if (!models.ready) models.installFromAssets()
         if (models.ready && voskFailures < 3) {
-            val v = vosk ?: VoskWakeEngine(models.dir) { WakeSensitivity.of(prefs.wakeSensitivity.value) }.also { vosk = it }
+            val v = vosk ?: VoskWakeEngine(
+                models.dir,
+                sensitivity = { WakeSensitivity.of(prefs.wakeSensitivity.value) },
+                phrase = { WakeDecision.words(prefs.wakeWord.value) },
+            ).also { vosk = it }
             if (v.prepare()) return v
         }
-        return engine as? RecognizerLoopWakeEngine ?: RecognizerLoopWakeEngine(context)
+        return engine as? RecognizerLoopWakeEngine ?: RecognizerLoopWakeEngine(context) { WakeDecision.words(prefs.wakeWord.value) }
     }
 
     private fun wake(remainder: String?) {

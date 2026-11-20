@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
         val onboarded by app.prefs.onboarded.collectAsStateWithLifecycle()
         val handsFree by app.handsFree.state.collectAsStateWithLifecycle()
         val gem by app.gemini.state.collectAsStateWithLifecycle()
+        val wake by app.prefs.wakeWord.collectAsStateWithLifecycle()
         var bootDone by remember { mutableStateOf(booted) }
         var surge by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
@@ -147,6 +148,7 @@ class MainActivity : ComponentActivity() {
                 showSeconds = showSeconds,
                 handsFree = handsFree != com.jarvis.launcher.ai.HandsFree.State.OFF,
                 cloudOnline = gem.hasKey && gem.enabled && sys.network != "OFFLINE",
+                wakeWord = wake,
                 onCoreTap = { startListening() },
                 onCoreHold = { screen = Screen.CONSOLE },
                 onOpenDrawer = { screen = Screen.DRAWER },

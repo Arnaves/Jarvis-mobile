@@ -35,6 +35,22 @@ class WakeDecisionTest {
     @Test fun noiseRejected() = assertFalse(WakeDecision.isWake("""{"text":""}"""))
     @Test fun decoyRejected() = assertFalse(WakeDecision.isWake(r("hey" to 0.9, "travis" to 0.99)))
     @Test fun garbage() = assertFalse(WakeDecision.isWake("not json"))
+
+    // ---- custom wake words
+    private val friday = listOf("friday")
+    @Test fun customWord() = assertTrue(WakeDecision.isWake(r("hey" to 0.9, "friday" to 0.8), phrase = friday))
+    @Test fun customWordIgnoresJarvis() = assertFalse(WakeDecision.isWake(r("hey" to 0.9, "jarvis" to 0.99), phrase = friday))
+    @Test fun multiWordPhrase() =
+        assertTrue(WakeDecision.isWake(r("wake" to 0.9, "up" to 0.85, "computer" to 0.9), phrase = listOf("wake", "up", "computer")))
+    @Test fun multiWordNeedsAllWords() =
+        assertFalse(WakeDecision.isWake(r("wake" to 0.9, "computer" to 0.9), phrase = listOf("wake", "up", "computer")))
+    @Test fun customPartial() = assertTrue(WakeDecision.partialHasPhrase("""{"partial":"ok friday"}""", friday))
+    @Test fun grammarUsesCustomWord() {
+        val g = WakeDecision.grammar(friday)
+        assertTrue(g.contains("\"hey friday\"")); assertFalse(g.contains("jarvis"))
+    }
+    @Test fun transcriptMatch() =
+        assertEquals("open the camera", WakeDecision.transcriptRegex(friday).find("Hey, Friday. open the camera")?.groupValues?.get(1))
 }
 
 @RunWith(RobolectricTestRunner::class)
