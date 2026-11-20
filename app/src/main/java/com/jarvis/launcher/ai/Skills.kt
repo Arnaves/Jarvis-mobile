@@ -375,10 +375,15 @@ class Skills(
     }
 
     private fun remember(q: String): Reply? {
-        val m = Regex("^(remember|note|make a note|take a note|don't let me forget)( that| to)?[:,]?\\s+(.+)$").find(q) ?: return null
-        val fact = m.groupValues[3]
-        prefs.addMemory(fact)
-        return Reply("Logged to memory: \"$fact\".")
+        val m = Regex("^(?:remember|note|note down|make a note|take a note|add a note|save a note|write down|jot down|don't let me forget|note for me)(?: that| to| for me| of)?[:,]?\\s+(.+)$").find(q)
+            ?: return null
+        val (text, day) = NoteDates.extract(m.groupValues[1])
+        if (text.isBlank()) return Reply("What should I note down, $title?")
+        prefs.addMemory(text.replaceFirstChar { it.uppercase() }, day)
+        return Reply(
+            if (day != null) "Noted for ${NoteDates.label(day)}: \"$text\". I'll bring it up in that day's briefing."
+            else "Logged to memory: \"$text\"."
+        )
     }
 
     private fun reminderNeedsTrigger(q: String): Reply? {
@@ -388,13 +393,23 @@ class Skills(
     }
 
     private fun recall(q: String): Reply? {
-        if (Regex("^(forget everything|clear (your )?memory|wipe (your )?memory)").containsMatchIn(q)) {
+        if (Regex("^(forget everything|clear (your |my |all )?(memory|notes)|wipe (your )?memory|delete all (my )?notes)").containsMatchIn(q)) {
             prefs.clearMemories(); return Reply("Memory banks wiped, $title.")
         }
-        if (!Regex("(what do you remember|what did i (tell|ask) you|my notes|read (my )?notes|what('s| is) in your memory)").containsMatchIn(q)) return null
-        val mem = prefs.memories.value
-        if (mem.isEmpty()) return Reply("My memory banks are empty, $title.")
-        return Reply("You asked me to remember: " + mem.takeLast(5).joinToString("; ") + ".")
+        Regex("^(?:delete|remove|forget|clear|done with|i (?:have )?(?:done|finished)|mark (?:as )?done)(?: the)?(?: note)?(?: about| on| for)? (.+)$").find(q)?.let { m ->
+            if (!Regex("\\b(note|notes)\\b").containsMatchIn(q) && !q.startsWith("i ") && !q.startsWith("done") && !q.startsWith("mark")) return@let
+            val words = m.groupValues[1].replace(Regex("\\b(note|notes|the|my|a)\\b"), " ").split(' ').filter { it.length > 2 }
+            val hit = prefs.notes.value.maxByOrNull { n -> words.count { n.text.lowercase().contains(it) } }
+                ?.takeIf { n -> words.any { n.text.lowercase().contains(it) } }
+            return if (hit == null) Reply("I couldn't find a note like that.")
+            else { prefs.removeNote(hit); Reply("Removed: \"${hit.text}\".") }
+        }
+        if (!Regex("(what do you remember|what did i (tell|ask) you|my notes|read (me )?(my )?notes|show (me )?(my )?notes|any notes|what('s| is) in your memory)").containsMatchIn(q)) return null
+        val notes = prefs.notes.value
+        if (notes.isEmpty()) return Reply("My memory banks are empty, $title.")
+        return Reply("Your notes: " + notes.takeLast(8).reversed().joinToString("; ") { n ->
+            n.forDay?.let { "${it.let { d -> NoteDates.label(d) }}: ${n.text}" } ?: n.text
+        } + ".")
     }
 
     private fun time(q: String): Reply? {

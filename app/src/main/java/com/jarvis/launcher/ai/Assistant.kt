@@ -48,6 +48,7 @@ class Assistant(
     private val web: WebKnowledge,
     private val tasks: TaskEngine,
     private val concierge: Concierge,
+    private val briefing: Briefing,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val ids = AtomicLong(0)
@@ -121,7 +122,9 @@ class Assistant(
             return
         }
         // Places & task management, bookings (async)
-        val asyncReply: (suspend () -> Reply)? = booking?.let { req -> { concierge.handle(req) } } ?: tasks.meta(text)
+        val asyncReply: (suspend () -> Reply)? = booking?.let { req -> { concierge.handle(req) } }
+            ?: (if (briefing.matches(text)) ({ Reply(briefing.compose()) }) else null)
+            ?: tasks.meta(text)
         if (asyncReply != null) {
             generation = scope.launch {
                 thinking.value = true
@@ -144,16 +147,19 @@ class Assistant(
             llm.isReady -> generation = scope.launch {
                 askNeural(text, (webQuery as? WebKnowledge.Query.Fact)?.subject)
             }
+            // No neural core: still try to answer from the internet rather than refusing.
+            prefs.webEnabled.value && web.online -> generation = scope.launch {
+                askWeb(WebKnowledge.Query.Fact(text.trim().trimEnd('?', '.', '!'), text), allowBrowser = false)
+            }
             else -> post(
                 "That's beyond my offline command set, ${prefs.userTitle.value}. " +
-                    if (prefs.webEnabled.value) "Install a neural core in Settings for open conversation."
-                    else "Enable internet knowledge or install a neural core in Settings.",
+                    "Install a neural core in Settings and I can answer anything, even offline.",
                 ChatMessage.Source.SYSTEM,
             )
         }
     }
 
-    private suspend fun askWeb(q: WebKnowledge.Query) {
+    private suspend fun askWeb(q: WebKnowledge.Query, allowBrowser: Boolean = true) {
         val id = ids.incrementAndGet()
         add(ChatMessage(id, false, "", streaming = true, source = ChatMessage.Source.WEB))
         thinking.value = true
@@ -162,10 +168,13 @@ class Assistant(
         } finally {
             thinking.value = false
         }
-        update(id, a.text, streaming = false)
+        val shown = if (!allowBrowser && a.fallbackSearch != null)
+            "I don't have an answer for that offline, ${prefs.userTitle.value}. Install a neural core in Settings for open conversation, or say \"search the web for …\"."
+        else a.text
+        update(id, shown, streaming = false)
         a.permission?.let { _events.tryEmit(AssistantEvent.RequestPermission(it)) }
-        if (prefs.voiceReplies.value) speaker.speak(a.text)
-        a.fallbackSearch?.let { term ->
+        if (prefs.voiceReplies.value) speaker.speak(shown)
+        if (allowBrowser) a.fallbackSearch?.let { term ->
             skills.webSearch(term)
             _events.tryEmit(AssistantEvent.LeaveLauncher)
         }
@@ -236,7 +245,7 @@ class Assistant(
             append("If the user wants the phone to do something, add a final line exactly like `ACTION: <command>` using one of: ")
             append("open <app name> | set a timer for <n> minutes | set an alarm for <hh:mm> | call <contact> | text <contact> saying <message> | ")
             append("search for <query> | navigate to <place> | flashlight on | flashlight off | play music | pause music | volume up | volume down | remember <fact>.\n")
-            if (memories.isNotEmpty()) append("Things the user asked you to remember: ${memories.joinToString("; ")}.\n")
+            if (memories.isNotEmpty()) append("The user's notes (use them when relevant, e.g. if asked what's planned): ${memories.joinToString("; ")}.\n")
             append(ctx).append('\n')
             append(text)
         }

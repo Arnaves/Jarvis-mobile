@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 
+/** A note. [forDay] is the local start-of-day (ms) it is meant for, e.g. "for tomorrow". */
+data class Note(val text: String, val createdAt: Long, val forDay: Long? = null)
+
 /** Small reactive preference store. Everything stays on-device. */
 class Prefs(context: Context) {
     private val sp = context.getSharedPreferences("jarvis", Context.MODE_PRIVATE)
@@ -13,7 +16,11 @@ class Prefs(context: Context) {
     private val _pinned = MutableStateFlow(readList(KEY_PINNED))
     val pinned: StateFlow<List<String>> = _pinned.asStateFlow()
 
-    private val _memories = MutableStateFlow(readList(KEY_MEMORIES))
+    private val _notes = MutableStateFlow(readNotes())
+    /** Notes / memories with timestamps and an optional day they are meant for. */
+    val notes: StateFlow<List<Note>> = _notes.asStateFlow()
+    private val _memories = MutableStateFlow(_notes.value.map { it.text })
+    /** Plain text of every note (used by the LLM persona and older call sites). */
     val memories: StateFlow<List<String>> = _memories.asStateFlow()
 
     private val _theme = MutableStateFlow(sp.getString(KEY_THEME, "arc")!!)
@@ -64,11 +71,33 @@ class Prefs(context: Context) {
         setPinned(if (key in cur) cur - key else (cur + key).takeLast(MAX_DOCK))
     }
 
-    fun addMemory(text: String) {
-        val list = (_memories.value + text).takeLast(50)
-        _memories.value = list; writeList(KEY_MEMORIES, list)
+    fun addMemory(text: String, forDay: Long? = null) {
+        setNotes((_notes.value + Note(text, System.currentTimeMillis(), forDay)).takeLast(100))
     }
-    fun clearMemories() { _memories.value = emptyList(); writeList(KEY_MEMORIES, emptyList()) }
+    fun removeNote(n: Note) = setNotes(_notes.value - n)
+    fun clearMemories() = setNotes(emptyList())
+
+    private fun setNotes(list: List<Note>) {
+        _notes.value = list
+        _memories.value = list.map { it.text }
+        val arr = JSONArray()
+        list.forEach { arr.put(org.json.JSONObject().put("t", it.text).put("at", it.createdAt).apply { it.forDay?.let { d -> put("day", d) } }) }
+        sp.edit().putString(KEY_NOTES, arr.toString()).apply()
+    }
+
+    private fun readNotes(): List<Note> {
+        sp.getString(KEY_NOTES, null)?.let { raw ->
+            return runCatching {
+                val arr = JSONArray(raw)
+                List(arr.length()) { i ->
+                    val o = arr.getJSONObject(i)
+                    Note(o.getString("t"), o.optLong("at"), if (o.has("day")) o.getLong("day") else null)
+                }
+            }.getOrDefault(emptyList())
+        }
+        // Migrate plain-string memories from older versions.
+        return readList(KEY_MEMORIES).map { Note(it, 0L, null) }
+    }
 
     fun setTheme(id: String) { _theme.value = id; sp.edit().putString(KEY_THEME, id).apply() }
     fun setVoiceReplies(v: Boolean) { _voiceReplies.value = v; sp.edit().putBoolean(KEY_VOICE, v).apply() }
@@ -94,6 +123,7 @@ class Prefs(context: Context) {
         const val MAX_DOCK = 5
         private const val KEY_PINNED = "pinned"
         private const val KEY_MEMORIES = "memories"
+        private const val KEY_NOTES = "notes_v2"
         private const val KEY_THEME = "theme"
         private const val KEY_VOICE = "voice"
         private const val KEY_TITLE = "title"

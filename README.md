@@ -49,6 +49,17 @@ Live internet lookups are optional; when one runs, only that question is sent.
 
 If the phone is locked when a task needs another app's screen (WhatsApp, calls), JARVIS says so and posts a "Run now" notification.
 
+**Notes & daily briefing**
+- "Note for tomorrow: call the bank" / "Remember the Wi-Fi password is tiger42" / "Note down dentist on Monday"
+- "**What do you have for me today?**" / "Brief me" / "What's on my agenda". You get:
+  - today's notes, including any carried over from earlier days
+  - tasks scheduled for today
+  - location tasks still waiting
+  - your next alarm and the weather
+  - upcoming dated notes and your general notes
+- "Read my notes" / "Delete the note about the bank" / "Delete all notes". Notes are also listed in Settings.
+- With a neural core loaded, the AI also sees your notes, so "when is my dentist?" just works.
+
 **Bookings & appointments**
 "Book a table for two at Peter Cat at 8 pm" or "call Dr Mehta clinic and take an appointment for tomorrow morning":
 JARVIS finds the place in your contacts or on OpenStreetMap near you, then dials it, opens its booking website, or falls
@@ -91,6 +102,8 @@ When a neural core is loaded, fact lookups are fed to the LLM as grounding, so i
 - Voice uses Android's on-device speech recogniser (Android 12+) and offline text-to-speech with a British-voice preference
 
 ## Installing a model
+
+Settings › Neural core has the same steps built in, plus a **Browse models** button.
 
 The app ships without a model, because model files are 0.5–4 GB. To add one:
 

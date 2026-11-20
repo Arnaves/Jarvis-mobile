@@ -33,6 +33,9 @@ object TaskParser {
             .replace(filler, " ")
             .replace(Regex("[?!]"), "").replace(Regex("\\s+"), " ").trim().trimEnd('.')
 
+        // Notes are dated by NoteDates ("note for tomorrow: …"), not scheduled.
+        if (Regex("^(remember|note|make a note|take a note|add a note|save a note|write down|jot down|don't let me forget)\\b").containsMatchIn(q)) return null
+
         // --- location trigger (allowed anywhere: "when I reach X" is an unambiguous signal)
         geo.find(q)?.let { m ->
             val place = m.groupValues[2].trim().removeSuffix(" area").trim()

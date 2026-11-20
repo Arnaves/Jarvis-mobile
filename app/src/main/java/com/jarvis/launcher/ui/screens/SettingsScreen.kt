@@ -81,7 +81,7 @@ fun SettingsScreen(
     val title by prefs.userTitle.collectAsState()
     val gpu by prefs.useGpu.collectAsState()
     val seconds by prefs.showSeconds.collectAsState()
-    val memories by prefs.memories.collectAsState()
+    val notes by prefs.notes.collectAsState()
     val llm by app.llm.state.collectAsState()
     val handsFree by prefs.handsFree.collectAsState()
     val lockScreen by prefs.lockScreen.collectAsState()
@@ -395,10 +395,25 @@ fun SettingsScreen(
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Runs offline via MediaPipe LLM Inference. Use a .task model such as Gemma 3 1B (int4), " +
-                        "Qwen 2.5 1.5B or Phi-4 mini from the LiteRT community. 1B models need ~1 GB RAM; 4 GB+ devices recommended.",
+                    "The neural core is an AI model that runs entirely on this phone, so JARVIS can answer anything, " +
+                        "hold a conversation and use your notes, even with no internet.",
                     style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
                 )
+                Spacer(Modifier.height(8.dp))
+                Text("HOW TO INSTALL", style = HudType.label, color = hud.secondary)
+                listOf(
+                    "1. Tap BROWSE MODELS (opens the LiteRT community on Hugging Face).",
+                    "2. Pick Gemma3-1B-IT (best start, ~550 MB) or Qwen2.5-1.5B-Instruct (smarter, needs 6 GB+ RAM).",
+                    "3. Gemma: sign in and tap \"Agree and access\" once (free).",
+                    "4. Open \"Files and versions\" and download a file ending in .task (int4 / q4 if offered).",
+                    "5. Come back and tap IMPORT MODEL FILE, choose it from Downloads, then tap it below to load.",
+                ).forEach { Text(it, style = HudType.body.copy(fontSize = 13.sp), color = hud.text) }
+                Spacer(Modifier.height(8.dp))
+                HudButton("BROWSE MODELS") {
+                    runCatching {
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://huggingface.co/litert-community")))
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
 
                 if (models.isNotEmpty()) {
@@ -455,14 +470,28 @@ fun SettingsScreen(
                 }
             }
 
-            // ------------------------------------------------ Memory
-            HudPanel(Modifier.fillMaxWidth(), title = "Memory banks") {
-                if (memories.isEmpty()) {
-                    Text("Empty. Say \"remember that…\" to store notes on-device.", style = HudType.body, color = hud.textDim)
+            // ------------------------------------------------ Notes
+            HudPanel(Modifier.fillMaxWidth(), title = "Notes & briefing") {
+                Text(
+                    "Say \"note for tomorrow: call the bank\" or \"remember that the Wi-Fi password is…\". " +
+                        "Ask \"what do you have for me today?\" for a briefing with today's notes, tasks, weather and alarms.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (notes.isEmpty()) {
+                    Text("No notes yet.", style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim)
                 } else {
-                    memories.takeLast(8).forEach { Text("• $it", style = HudType.body.copy(fontSize = 13.sp), color = hud.text) }
-                    Spacer(Modifier.height(10.dp))
-                    HudButton("WIPE MEMORY") { prefs.clearMemories() }
+                    notes.takeLast(15).reversed().forEach { n ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(n.text, style = HudType.body.copy(fontSize = 14.sp), color = hud.text)
+                                n.forDay?.let { Text("FOR ${com.jarvis.launcher.ai.NoteDates.label(it).uppercase()}", style = HudType.label, color = hud.secondary) }
+                            }
+                            IconButton(onClick = { prefs.removeNote(n) }) { Icon(Icons.Outlined.Delete, "Delete", tint = hud.warn) }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    HudButton("DELETE ALL NOTES") { prefs.clearMemories() }
                 }
             }
 

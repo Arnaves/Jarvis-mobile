@@ -56,7 +56,8 @@ class JarvisApp : Application() {
         web = WebKnowledge(this)
         tasks = com.jarvis.launcher.ai.TaskEngine(this, prefs)
         val concierge = com.jarvis.launcher.ai.Concierge(this, prefs, contacts, apps)
-        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge)
+        val briefing = com.jarvis.launcher.ai.Briefing(prefs, tasks, monitor, web)
+        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge, briefing)
         tasks.executor = { cmd -> assistant.submit(cmd) }
         tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
         tasks.rearm()
