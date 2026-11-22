@@ -18,16 +18,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Robolectric downloads android-all jars from Maven Central at test time; cache them so a
-      # transient network blip doesn't fail every Robolectric test.
-      - uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository/org/robolectric
-          key: robolectric-android-all-${{ hashFiles('app/build.gradle.kts') }}
-          restore-keys: robolectric-android-all-
-
       - name: Unit tests + UI screenshots (Robolectric)
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: ./gradlew --init-script .github/ci/maven-mirror.gradle testDebugUnitTest --stacktrace
 
       - name: Bundle offline wake-word model (Vosk, ~40 MB)
         run: |
@@ -37,7 +29,7 @@ jobs:
           mv /tmp/vosk/vosk-model-small-en-us-0.15 app/src/main/assets/vosk-model
 
       - name: Build APKs
-        run: ./gradlew assembleDebug assembleRelease --stacktrace
+        run: ./gradlew --init-script .github/ci/maven-mirror.gradle assembleDebug assembleRelease --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:

@@ -92,3 +92,21 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.40.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// Robolectric normally downloads android-all jars from Maven Central at test time, outside Gradle's
+// cache and retries, and Maven Central rate-limits that (HTTP 429). Resolve them through Gradle
+// instead and run Robolectric offline against the copied jars.
+val robolectricJars: Configuration by configurations.creating { isTransitive = false }
+dependencies {
+    robolectricJars("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7") // SDK 34, Robolectric 4.14.x
+}
+val robolectricDir = layout.buildDirectory.dir("robolectric-jars")
+val copyRobolectricJars by tasks.registering(Copy::class) {
+    from(robolectricJars)
+    into(robolectricDir)
+}
+tasks.withType<Test>().configureEach {
+    dependsOn(copyRobolectricJars)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricDir.get().asFile.absolutePath)
+}
