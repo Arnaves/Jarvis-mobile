@@ -107,6 +107,13 @@ val copyRobolectricJars by tasks.registering(Copy::class) {
 }
 tasks.withType<Test>().configureEach {
     dependsOn(copyRobolectricJars)
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = false
+        showStandardStreams = false
+    }
+    doFirst { println("Robolectric offline jars: " + robolectricDir.get().asFile.listFiles()?.joinToString { it.name }) }
     systemProperty("robolectric.offline", "true")
     systemProperty("robolectric.dependency.dir", robolectricDir.get().asFile.absolutePath)
 }
