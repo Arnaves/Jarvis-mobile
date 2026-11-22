@@ -98,7 +98,9 @@ dependencies {
 // instead and run Robolectric offline against the copied jars.
 val robolectricJars: Configuration by configurations.creating { isTransitive = false }
 dependencies {
-    robolectricJars("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7") // SDK 34, Robolectric 4.14.x
+    // Robolectric 4.14.x preinstrumented jars: SDK 34 (tests' @Config) and SDK 35 (targetSdk, loaded at startup).
+    robolectricJars("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
+    robolectricJars("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
 }
 val robolectricDir = layout.buildDirectory.dir("robolectric-jars")
 val copyRobolectricJars by tasks.registering(Copy::class) {
