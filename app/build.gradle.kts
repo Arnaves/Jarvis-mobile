@@ -96,15 +96,19 @@ dependencies {
 // Robolectric normally downloads android-all jars from Maven Central at test time, outside Gradle's
 // cache and retries, and Maven Central rate-limits that (HTTP 429). Resolve them through Gradle
 // instead and run Robolectric offline against the copied jars.
-val robolectricJars: Configuration by configurations.creating { isTransitive = false }
-dependencies {
-    // Robolectric 4.14.x preinstrumented jars: SDK 34 (tests' @Config) and SDK 35 (targetSdk, loaded at startup).
-    robolectricJars("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
-    robolectricJars("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+// One configuration per jar: they are versions of the same module, and a single configuration
+// would let Gradle's conflict resolution keep only the newest.
+val robolectricSdkJars = listOf(
+    "14-robolectric-10818077-i7", // SDK 34 (tests' @Config)
+    "15-robolectric-12650502-i7", // SDK 35 (targetSdk, also loaded)
+).mapIndexed { i, v ->
+    configurations.create("robolectricJars$i") { isTransitive = false }.also {
+        dependencies.add(it.name, "org.robolectric:android-all-instrumented:$v")
+    }
 }
 val robolectricDir = layout.buildDirectory.dir("robolectric-jars")
 val copyRobolectricJars by tasks.registering(Copy::class) {
-    from(robolectricJars)
+    robolectricSdkJars.forEach { from(it) }
     into(robolectricDir)
 }
 tasks.withType<Test>().configureEach {
