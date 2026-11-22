@@ -1,9 +1,11 @@
 // CI only: try Google's public Maven Central mirror first; Maven Central rate-limits CI runners (HTTP 429).
+def mirrorUrl = System.getenv("MAVEN_MIRROR_URL") ?: "https://maven-central.storage-download.googleapis.com/maven2"
+def preferMirror = { repos ->
+    def m = repos.maven { name = "MavenCentralMirror"; url = mirrorUrl }   // `maven {}` already adds it (at the end)
+    repos.remove(m)
+    repos.addFirst(m)                                                      // ...so move it to the front
+}
 settingsEvaluated { settings ->
-    settings.dependencyResolutionManagement.repositories.with {
-        add(0, maven { url "https://maven-central.storage-download.googleapis.com/maven2" })
-    }
-    settings.pluginManagement.repositories.with {
-        add(0, maven { url "https://maven-central.storage-download.googleapis.com/maven2" })
-    }
+    preferMirror(settings.dependencyResolutionManagement.repositories)
+    preferMirror(settings.pluginManagement.repositories)
 }
