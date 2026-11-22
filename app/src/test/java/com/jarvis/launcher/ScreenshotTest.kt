@@ -90,7 +90,7 @@ class ScreenshotTest {
         com.jarvis.launcher.ui.screens.LockScreen(
             sys = sys, mode = CoreMode.IDLE, voice = VoiceState(),
             lastMessage = ChatMessage(1, false, "Currently 14 degrees and partly cloudy. Today's range is 9 to 17."),
-            handsFree = true, showSeconds = true, unlockSignal = 0, onMic = {}, onUnlocked = {},
+            handsFree = true, showSeconds = true, unlockSignal = 0, onUnlocked = {},
         )
     }
 

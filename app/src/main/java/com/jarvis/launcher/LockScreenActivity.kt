@@ -61,10 +61,12 @@ class LockScreenActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
-            setTurnScreenOn(true)
+            // Never light the display ourselves: the activity is pre-armed when the screen
+            // turns off, so turning it on here would undo the sleep timer.
+            setTurnScreenOn(false)
         } else {
             @Suppress("DEPRECATION")
-            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         }
         readIntent(intent)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) { override fun handleOnBackPressed() {} })
@@ -101,7 +103,6 @@ class LockScreenActivity : ComponentActivity() {
                         surge = surge,
                         introKey = showCount,
                         onSurgeDone = { surge = false },
-                        onMic = { startListening() },
                         onUnlocked = { dismiss() },
                     )
                 }
@@ -111,7 +112,8 @@ class LockScreenActivity : ComponentActivity() {
 
     private fun readIntent(i: Intent?) {
         reason = runCatching { Reason.valueOf(i?.getStringExtra(EXTRA_REASON) ?: "ARM") }.getOrDefault(Reason.ARM)
-        if (reason == Reason.CHARGER) surge = true
+        // Only play the plug-in animation if the screen is already on (we never wake it ourselves).
+        if (reason == Reason.CHARGER && getSystemService(android.os.PowerManager::class.java).isInteractive) surge = true
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -133,12 +135,6 @@ class LockScreenActivity : ComponentActivity() {
     override fun onStop() {
         visible = false
         super.onStop()
-    }
-
-    private fun startListening() {
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) app.handsFree.manualListen()
     }
 
     private fun dismiss() {

@@ -37,6 +37,8 @@ Live internet lookups are optional; when one runs, only that question is sent.
 - Android doesn't allow third-party apps to replace the secure system lock, so JARVIS is drawn *over* it.
   Your phone stays exactly as secure as before. This needs the "Display over other apps" permission.
   JARVIS is pre-loaded when the screen turns off, so it's already on top when you wake the phone.
+  It never turns the display on by itself, so your sleep timer works normally. The lock screen has no tap-to-talk;
+  use the wake word or unlock first.
   **Xiaomi/Redmi/Poco** also need "Show on Lock screen", and Oppo/Vivo/Realme need "Lock screen display".
   Settings has a shortcut to the right page.
 

@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -81,7 +80,6 @@ fun LockScreen(
     surge: Boolean = false,
     introKey: Int = 0,
     onSurgeDone: () -> Unit = {},
-    onMic: () -> Unit,
     onUnlocked: () -> Unit,
 ) {
     val hud = LocalHud.current
@@ -189,7 +187,7 @@ fun LockScreen(
                 mode == CoreMode.THINKING -> "PROCESSING…"
                 intro.value < 1f -> "IDENTITY SCAN ${(intro.value * 100).toInt()}%"
                 handsFree -> "SAY “${com.jarvis.launcher.data.Prefs.wakeDisplay(wakeWord)}”"
-                else -> "TAP MIC TO SPEAK"
+                else -> "SWIPE UP TO UNLOCK"
             }
             Text(caption.uppercase(), style = HudType.label, color = hud.textDim, textAlign = TextAlign.Center)
 
@@ -204,15 +202,6 @@ fun LockScreen(
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 RingGauge(sys.batteryPct / 100f, if (sys.charging) "CHARGING" else "POWER", "${sys.batteryPct}", size = 54.dp, warn = sys.batteryPct < 20 && !sys.charging)
-                Box(
-                    Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(hud.primary.copy(alpha = if (mode == CoreMode.LISTENING) 0.3f else 0.12f))
-                        .border(1.5.dp, hud.primary, CircleShape)
-                        .clickable(onClick = onMic),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Mic, "Speak", tint = hud.primary, modifier = Modifier.size(28.dp)) }
                 RingGauge(sys.ramUsedPct / 100f, "MEMORY", "${sys.ramUsedPct}", size = 54.dp)
             }
 
