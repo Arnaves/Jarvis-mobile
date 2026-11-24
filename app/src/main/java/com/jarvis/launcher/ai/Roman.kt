@@ -25,7 +25,8 @@ object Roman {
      * end of a word: "कर" -> "kara" -> "kar". Drop it when the native word ends in a bare consonant.
      */
     private fun schwa(native: String, latin: String): String {
-        val last = native.trimEnd { !Character.isLetter(it) && Character.getType(it) != Character.NON_SPACING_MARK.toInt() }.lastOrNull() ?: return latin
+        // Strip only trailing punctuation/symbols; vowel signs (matras like ा, Mc) must stay.
+        val last = native.replace(Regex("[\\p{P}\\p{S}\\s]+$"), "").lastOrNull() ?: return latin
         val bareConsonant = last.code in 0x0915..0x0939 || last.code in 0x0958..0x095F
         val trail = latin.takeLastWhile { !it.isLetter() }
         val core = latin.dropLast(trail.length)
