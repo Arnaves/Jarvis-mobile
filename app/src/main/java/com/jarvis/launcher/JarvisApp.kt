@@ -60,7 +60,7 @@ class JarvisApp : Application() {
         val briefing = com.jarvis.launcher.ai.Briefing(prefs, tasks, monitor, web)
         gemini = com.jarvis.launcher.ai.GeminiClient(this)
         assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge, briefing, gemini)
-        tasks.executor = { cmd -> assistant.submit(cmd) }
+        tasks.executor = { cmd -> assistant.runTask(cmd) }
         tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
         tasks.rearm()
         handsFree = HandsFree(this, voice, speaker, assistant, prefs, WakeModelStore(this))

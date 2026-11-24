@@ -276,7 +276,7 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra(com.jarvis.launcher.ai.TaskEngine.EXTRA_RUN_COMMAND)?.let { cmd ->
             intent.removeExtra(com.jarvis.launcher.ai.TaskEngine.EXTRA_RUN_COMMAND)
             screen = Screen.CONSOLE
-            window.decorView.post { app.assistant.submit(cmd) }
+            window.decorView.post { app.assistant.runTask(cmd) }
             return
         }
         when (intent?.action) {

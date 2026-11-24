@@ -66,6 +66,16 @@ class Prefs(context: Context) {
     val wakeSensitivity: StateFlow<String> = _wakeSensitivity.asStateFlow()
     fun setWakeSensitivity(v: String) { _wakeSensitivity.value = v; sp.edit().putString("wake_sens", v).apply() }
 
+    private val _directMessage = MutableStateFlow(sp.getBoolean("direct_msg", false))
+    /** Send WhatsApp messages without the extra "send it" confirmation. */
+    val directMessage: StateFlow<Boolean> = _directMessage.asStateFlow()
+    fun setDirectMessage(v: Boolean) { _directMessage.value = v; sp.edit().putBoolean("direct_msg", v).apply() }
+
+    private val _roman = MutableStateFlow(sp.getBoolean("roman", true))
+    /** Write native-script messages in Roman letters (Hindi -> Hinglish). */
+    val romanLetters: StateFlow<Boolean> = _roman.asStateFlow()
+    fun setRomanLetters(v: Boolean) { _roman.value = v; sp.edit().putBoolean("roman", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }

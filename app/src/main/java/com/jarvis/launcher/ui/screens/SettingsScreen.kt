@@ -387,6 +387,56 @@ fun SettingsScreen(
                 )
             }
 
+            // ------------------------------------------------ Phone control
+            HudPanel(Modifier.fillMaxWidth(), title = "Phone control") {
+                val a11yOn = com.jarvis.launcher.service.JarvisAccessibility.enabled(ctx)
+                val a11yLive = com.jarvis.launcher.service.JarvisAccessibility.connected
+                val notifOn = com.jarvis.launcher.service.JarvisNotificationListener.granted(ctx)
+                val writeOn = android.provider.Settings.System.canWrite(ctx)
+                val direct by prefs.directMessage.collectAsState()
+                val roman by prefs.romanLetters.collectAsState()
+                Text(
+                    "Screen control lets JARVIS read the screen, tap, type, scroll, swipe, go back/home, lock the phone, take screenshots, " +
+                        "send WhatsApp messages and use YouTube buttons, only when you ask.",
+                    style = HudType.body.copy(fontSize = 13.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    when {
+                        a11yLive -> "● SCREEN CONTROL CONNECTED"
+                        a11yOn -> "○ ENABLED BUT NOT CONNECTED: toggle it off and on in Accessibility"
+                        else -> "○ SCREEN CONTROL OFF"
+                    },
+                    style = HudType.label, color = if (a11yLive) hud.secondary else hud.warn,
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HudButton(if (a11yLive) "SCREEN CONTROL ✓" else "ENABLE SCREEN CONTROL") {
+                        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                    HudButton(if (notifOn) "MEDIA ACCESS ✓" else "ALLOW MEDIA ACCESS", enabled = !notifOn) {
+                        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    }
+                    HudButton(if (writeOn) "BRIGHTNESS ✓" else "ALLOW BRIGHTNESS", enabled = !writeOn) {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:${ctx.packageName}"))
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                ToggleRow("WhatsApp: send directly (no \"send it\" step)", direct) { prefs.setDirectMessage(it) }
+                Text(
+                    "Off: JARVIS drafts the message and waits for \"send it\" or \"cancel\". \"Draft a WhatsApp…\" never sends.",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(6.dp))
+                ToggleRow("Write messages in Roman letters", roman) { prefs.setRomanLetters(it) }
+                Text(
+                    "Speak Hindi, Marathi, Bengali, Tamil… and the message is written in English letters: \"kya kar rahe ho\".",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
+            }
+
             // ------------------------------------------------ Tasks & automation
             HudPanel(Modifier.fillMaxWidth(), title = "Tasks & automation") {
                 Text(
@@ -411,7 +461,7 @@ fun SettingsScreen(
                     HudButton(if (smsOk) "AUTO-SEND SMS ✓" else "ALLOW AUTO-SEND SMS", enabled = !smsOk) {
                         onRequestPermission(Manifest.permission.SEND_SMS)
                     }
-                    HudButton(if (a11yOk) "WHATSAPP AUTO-SEND ✓" else "ENABLE WHATSAPP AUTO-SEND", enabled = !a11yOk) {
+                    HudButton(if (a11yOk) "SCREEN CONTROL ✓" else "ENABLE SCREEN CONTROL", enabled = !a11yOk) {
                         ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     }
                     HudButton(if (overlayOk) "RUN IN BACKGROUND ✓" else "ALLOW RUNNING TASKS IN BACKGROUND", enabled = !overlayOk) {
@@ -432,7 +482,7 @@ fun SettingsScreen(
                 if (!a11yOk) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "WhatsApp auto-send: in Accessibility, open \"JARVIS auto-send\" and switch it on. JARVIS only presses Send in WhatsApp, right after you ask him to.",
+                        "Screen control: in Accessibility, open \"JARVIS\" and switch it on. Needed to send WhatsApp messages automatically.",
                         style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
                     )
                 }

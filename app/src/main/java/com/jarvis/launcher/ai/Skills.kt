@@ -66,7 +66,23 @@ class Skills(
 
     private val title get() = prefs.userTitle.value
 
+    val screen = ScreenSkills(context) { prefs.userTitle.value }
+
+    /** Raw text is lower-cased by clean(); "type"/"copy" keep the user's original casing. */
+    private var rawInput = ""
+
+    private fun screenControl(q: String): Reply? {
+        val viaRaw = Regex("^(?:type|dictate|copy)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+        if (viaRaw) {
+            val raw = rawInput.trim().replace(Regex("^(?:(?:hey|ok|okay|hi)\\s+)?jarvis[,.!]?\\s*", RegexOption.IGNORE_CASE), "")
+            val cut = Regex("^(type|dictate|copy)\\b", RegexOption.IGNORE_CASE).find(raw)
+            if (cut != null) return screen.handle(cut.value.lowercase() + raw.substring(cut.range.last + 1).trimEnd('.'))
+        }
+        return screen.handle(q)
+    }
+
     fun handle(raw: String): Reply? {
+        rawInput = raw
         val q = clean(raw)
         if (q.isEmpty()) return Reply("Standing by, $title.")
 
@@ -85,8 +101,8 @@ class Skills(
         .trim().trimEnd('.')
 
     private val skills: List<(String) -> Reply?> = listOf(
-        ::greeting, ::identity, ::help, ::flashlight, ::timer, ::alarm, ::openSettings, ::status, ::openApp,
-        ::call, ::whatsapp, ::message, ::navigate, ::search, ::media, ::volume, ::camera, ::remember, ::reminderNeedsTrigger, ::recall,
+        ::whatsapp, ::greeting, ::identity, ::help, ::flashlight, ::timer, ::alarm, ::openSettings, ::screenControl, ::status, ::openApp,
+        ::call, ::message, ::navigate, ::search, ::media, ::volume, ::camera, ::remember, ::reminderNeedsTrigger, ::recall,
         ::time, ::date, ::battery, ::calculate, ::fun_, ::uninstall,
     )
 
@@ -247,34 +263,16 @@ class Skills(
         return Reply("Calling ${contact.name}.", leavesLauncher = true, action = { dial(contact.number) })
     }
 
-    private fun whatsapp(q: String): Reply? {
-        val wa = "(?:whatsapp|whats app|what's app|watsapp|whatsap)"
-        val m = Regex("^(?:send |write |drop )?(?:a |an )?$wa(?: message| msg| text)?(?: to)? (.+?),? (?:saying|that says|which says|that|say|telling (?:her|him|them)|with)\\s+(.+)$").find(q)
-            ?: Regex("^(?:send |write )?(?:a )?(?:message|text|msg) (?:to )?(.+?) on $wa,? (?:saying|that says|that|say)\\s+(.+)$").find(q)
-            ?: Regex("^$wa (.+?),? (?:saying|that|say)\\s+(.+)$").find(q)
-            ?: return null
-        val who = m.groupValues[1].removePrefix("to ").trim()
-        val body = m.groupValues[2].trim().replaceFirstChar { it.uppercase() }
-        val contact = resolveContact(who) ?: return contactProblem(who)
-        val pkg = listOf("com.whatsapp", "com.whatsapp.w4b").firstOrNull { installed(it) }
-            ?: return Reply("WhatsApp isn't installed, $title. Shall I text ${contact.name} instead? Say \"text ${contact.name} saying $body\".")
-        val auto = com.jarvis.launcher.service.JarvisAccessibility.enabled(context)
-        return Reply(
-            if (auto) "Sending WhatsApp to ${contact.name}: \"$body\"."
-            else "WhatsApp to ${contact.name} is ready, $title. Tap send. (Enable JARVIS auto-send in Settings to skip this.)",
-            leavesLauncher = true,
-            action = {
-                if (auto) com.jarvis.launcher.service.JarvisAccessibility.armSend()
-                val uri = Uri.parse("https://api.whatsapp.com/send?phone=${contacts.international(contact.number)}&text=" + Uri.encode(body))
-                apps.startSafely(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg))
-            },
-        )
-    }
+    val whatsAppFlow = WhatsAppFlow(context, prefs, contacts, apps)
+
+    private fun whatsapp(q: String): Reply? = whatsAppFlow.handle(q, rawInput)
 
     private fun message(q: String): Reply? {
         val m = Regex("^(text|message|sms|send an? (?:text|message|sms) to|send)\\s+(.+?)(?:,?\\s+(?:saying|that says|that|say)\\s+(.+))?$").find(q) ?: return null
         val who = m.groupValues[2].removePrefix("to ").trim()
-        val body = m.groupValues[3].trim().replaceFirstChar { it.uppercase() }
+        val rawBody = Regex("\\b(?:saying|that says|that|say)\\s+(.+)$", RegexOption.IGNORE_CASE).find(rawInput)?.groupValues?.get(1)
+        var body = (rawBody ?: m.groupValues[3]).trim().trimEnd('.').replaceFirstChar { it.uppercase() }
+        if (prefs.romanLetters.value) body = Roman.toRoman(body)
         val contact = if (who.count { it.isDigit() } >= 3) Contact(who, who.replace(Regex("[^0-9+]"), ""))
         else resolveContact(who) ?: return contactProblem(who)
         val canSend = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
@@ -322,25 +320,9 @@ class Skills(
         if (!apps.startSafely(i)) apps.startSafely(Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(term))))
     }
 
-    private fun media(q: String): Reply? {
-        val code = when {
-            Regex("^(pause|stop)( the)?( music| song| playback| audio)?$").matches(q) -> KeyEvent.KEYCODE_MEDIA_PAUSE
-            Regex("^(play|resume)( the)?( music| song| playback| audio| something)?$").matches(q) -> KeyEvent.KEYCODE_MEDIA_PLAY
-            Regex("^(next|skip)( track| song)?$").matches(q) || q == "skip this" -> KeyEvent.KEYCODE_MEDIA_NEXT
-            Regex("^(previous|last|go back)( track| song)?$").matches(q) -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
-            else -> null
-        } ?: return null
-        val msg = when (code) {
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> "Paused."
-            KeyEvent.KEYCODE_MEDIA_PLAY -> "Resuming playback."
-            KeyEvent.KEYCODE_MEDIA_NEXT -> "Next track."
-            else -> "Previous track."
-        }
-        return Reply(msg, action = {
-            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
-            audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
-        })
-    }
+    val mediaSkills = MediaSkills(context, apps) { prefs.userTitle.value }
+
+    private fun media(q: String): Reply? = mediaSkills.handle(q)
 
     private fun volume(q: String): Reply? {
         if (!Regex("(volume|louder|quieter|mute|unmute|turn it (up|down))").containsMatchIn(q)) return null

@@ -75,6 +75,9 @@ class Assistant(
     val voiceState get() = voice.state
 
     init {
+        skills.screen.onFailure = { msg -> post(msg, ChatMessage.Source.SYSTEM) }
+        skills.whatsAppFlow.announce = { msg -> post(msg, ChatMessage.Source.SKILL) }
+        skills.mediaSkills.speak = { msg -> if (msg.length <= 2) speaker.speak(msg) else post(msg, ChatMessage.Source.SYSTEM) }
         skills.setLlmReadyProvider { llm.isReady || gemini.available }
     }
 
@@ -111,6 +114,12 @@ class Assistant(
         _messages.value = emptyList()
         llm.resetConversation()
         geminiHistory.clear()
+    }
+
+    /** Runs a deferred task's command: no one is around to confirm, so act directly. */
+    fun runTask(command: String) {
+        skills.whatsAppFlow.forceDirect = true
+        try { submit(command) } finally { skills.whatsAppFlow.forceDirect = false }
     }
 
     fun submit(raw: String) {
@@ -315,7 +324,8 @@ class Assistant(
             append("If the user wants the phone to do something, add a final line exactly like `ACTION: <command>` using one of: ")
             append("open <app name> | set a timer for <n> minutes | set an alarm for <hh:mm> | call <contact> | text <contact> saying <message> | ")
             append("send a whatsapp to <contact> saying <message> | navigate to <place> | flashlight on | flashlight off | play music | pause music | ")
-            append("volume up | volume down | remember <fact> | note for <today/tomorrow/weekday> <text>. ")
+            append("volume up | volume down | remember <fact> | note for <today/tomorrow/weekday> <text> | ")
+            append("read the screen | tap <label> | type <text> | scroll down | scroll up | go back | go home | open notifications | lock the phone | take a screenshot. ")
             append("Only use ACTION when the user clearly asked for that action.\n")
             append("Current time: $now. Battery: ${s?.batteryPct ?: "?"}%${if (s?.charging == true) " (charging)" else ""}.\n")
             if (notes.isNotEmpty()) {
