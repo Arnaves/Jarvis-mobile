@@ -125,6 +125,9 @@ fun SettingsScreen(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 30.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            // ------------------------------------------------ Permissions checklist
+            PermissionChecklist(isDefaultLauncher, onSetDefault, onRequestPermission)
+
             // ------------------------------------------------ Launcher
             HudPanel(Modifier.fillMaxWidth(), title = "Home launcher") {
                 Text(
@@ -159,6 +162,30 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            // ------------------------------------------------ Core & glow
+            HudPanel(Modifier.fillMaxWidth(), title = "Core & edge glow") {
+                val core by prefs.coreStyle.collectAsState()
+                val glow by prefs.edgeGlow.collectAsState()
+                Text("CORE STYLE", style = HudType.label, color = hud.textDim)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Arc reactor", selected = core == "reactor") { prefs.setCoreStyle("reactor") }
+                    Chip("Particle orb", selected = core == "orb") { prefs.setCoreStyle("orb") }
+                }
+                Spacer(Modifier.height(10.dp))
+                ToggleRow("Edge glow over other apps", glow) { on ->
+                    prefs.setEdgeGlow(on)
+                    if (on && !android.provider.Settings.canDrawOverlays(ctx)) runCatching {
+                        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:${ctx.packageName}")))
+                    }
+                }
+                Text(
+                    "A glow around the screen shows when JARVIS is listening (theme colour), thinking (amber) or speaking, even inside other apps. " +
+                        "Needs \"Display over other apps\".",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
             }
 
             // ------------------------------------------------ Voice
@@ -755,5 +782,89 @@ private fun HudField(value: String, hint: String, secret: Boolean = false, onCha
             visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+
+@Composable
+private fun PermissionChecklist(isDefaultLauncher: Boolean, onSetDefault: () -> Unit, onRequestPermission: (String) -> Unit) {
+    val hud = LocalHud.current
+    val ctx = LocalContext.current
+    // Re-check every time the user comes back from a system settings page.
+    var tick by remember { mutableIntStateOf(0) }
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    fun has(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
+    fun open(action: String, pkgUri: Boolean = false) {
+        runCatching {
+            val i = android.content.Intent(action)
+            if (pkgUri) i.data = android.net.Uri.parse("package:${ctx.packageName}")
+            ctx.startActivity(i)
+        }.onFailure { runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${ctx.packageName}"))) } }
+    }
+
+    data class Item(val name: String, val why: String, val ok: Boolean, val fix: () -> Unit)
+    val items = remember(tick, isDefaultLauncher) {
+        val sdk = android.os.Build.VERSION.SDK_INT
+        val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+        val assistant = runCatching { android.provider.Settings.Secure.getString(ctx.contentResolver, "assistant") }.getOrNull().orEmpty()
+        buildList {
+            add(Item("Home screen", "JARVIS as your launcher", isDefaultLauncher, onSetDefault))
+            add(Item("Microphone", "voice commands, wake word, Live", has(Manifest.permission.RECORD_AUDIO)) { onRequestPermission(Manifest.permission.RECORD_AUDIO) })
+            add(Item("Contacts", "calls, WhatsApp and texts by name", has(Manifest.permission.READ_CONTACTS)) { onRequestPermission(Manifest.permission.READ_CONTACTS) })
+            if (sdk >= 33) add(Item("Notifications", "listening indicator, task alerts", has(Manifest.permission.POST_NOTIFICATIONS)) { onRequestPermission(Manifest.permission.POST_NOTIFICATIONS) })
+            add(Item("Location", "local weather, saved places", has(Manifest.permission.ACCESS_FINE_LOCATION)) { onRequestPermission(Manifest.permission.ACCESS_FINE_LOCATION) })
+            if (sdk >= 29) add(Item("Location all the time", "\"when I reach office\" tasks", has(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+                if (!has(Manifest.permission.ACCESS_FINE_LOCATION)) onRequestPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                else onRequestPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            })
+            add(Item("Send SMS", "texts without opening Messages", has(Manifest.permission.SEND_SMS)) { onRequestPermission(Manifest.permission.SEND_SMS) })
+            add(Item("Screen control", "read/tap/type, WhatsApp send, YouTube", com.jarvis.launcher.service.JarvisAccessibility.connected) {
+                open(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            })
+            add(Item("Display over other apps", "lock screen, edge glow, background tasks", android.provider.Settings.canDrawOverlays(ctx)) {
+                open(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkgUri = true)
+            })
+            add(Item("Notification access", "\"what's playing\", media control", com.jarvis.launcher.service.JarvisNotificationListener.granted(ctx)) {
+                open(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            })
+            add(Item("Modify system settings", "brightness", android.provider.Settings.System.canWrite(ctx)) {
+                open(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, pkgUri = true)
+            })
+            if (sdk >= 31) add(Item("Exact alarms", "tasks on time (\"at 6 pm…\")", ctx.getSystemService(android.app.AlarmManager::class.java).canScheduleExactAlarms()) {
+                open(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkgUri = true)
+            })
+            add(Item("Battery: unrestricted", "keeps wake word & tasks alive", pm.isIgnoringBatteryOptimizations(ctx.packageName)) {
+                @Suppress("BatteryLife")
+                open(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkgUri = true)
+            })
+            add(Item("Digital assistant", "hold power to summon JARVIS", assistant.startsWith(ctx.packageName)) {
+                open(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS)
+            })
+        }
+    }
+    val missing = items.count { !it.ok }
+    HudPanel(Modifier.fillMaxWidth(), title = "System checklist", accent = if (missing == 0) hud.secondary else hud.warn) {
+        Text(
+            if (missing == 0) "All systems authorised." else "$missing of ${items.size} not set up yet. Tap FIX on each.",
+            style = HudType.data, color = if (missing == 0) hud.secondary else hud.warn,
+        )
+        Spacer(Modifier.height(8.dp))
+        items.forEach { item ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (item.ok) "●" else "○", color = if (item.ok) hud.secondary else hud.warn, fontSize = 12.sp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, style = HudType.body.copy(fontSize = 14.sp), color = hud.text)
+                    Text(item.why, style = HudType.label.copy(fontSize = 9.sp, letterSpacing = 1.sp), color = hud.textDim)
+                }
+                if (item.ok) Text("ALLOWED", style = HudType.label, color = hud.secondary)
+                else HudButton("FIX", onClick = item.fix)
+            }
+        }
     }
 }

@@ -138,7 +138,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeId by app.prefs.theme.collectAsState()
-            JarvisTheme(HudPalettes.byId(themeId)) { Root() }
+            val coreStyle by app.prefs.coreStyle.collectAsState()
+            JarvisTheme(HudPalettes.byId(themeId)) {
+                androidx.compose.runtime.CompositionLocalProvider(com.jarvis.launcher.ui.components.LocalCoreStyle provides coreStyle) { Root() }
+            }
         }
     }
 
@@ -347,6 +350,12 @@ class MainActivity : ComponentActivity() {
         micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         com.jarvis.launcher.service.JarvisService.sync(this)
         app.tasks.syncGeofences()
+        app.uiVisible.value = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        app.uiVisible.value = false
     }
 
     override fun onStop() {

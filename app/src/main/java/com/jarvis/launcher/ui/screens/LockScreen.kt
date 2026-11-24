@@ -170,9 +170,9 @@ fun LockScreen(
             ) {
                 if (sys.charging) {
                     com.jarvis.launcher.ui.components.EnergyStream(sys.batteryPct / 100f, Modifier.fillMaxSize())
-                    ArcReactor(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.size(175.dp))
+                    com.jarvis.launcher.ui.components.JarvisCore(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.size(175.dp))
                 } else {
-                    ArcReactor(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.fillMaxSize())
+                    com.jarvis.launcher.ui.components.JarvisCore(if (unlocking) CoreMode.THINKING else mode, voice.level, Modifier.fillMaxSize())
                 }
             }
             if (sys.charging) {

@@ -61,6 +61,12 @@ class ScreenshotTest {
 
     @Test fun homeIdle() = shot("home_idle") { home(CoreMode.IDLE, msg = "Good evening, sir. Neural core online. How can I help?") }
 
+    @Test fun homeOrb() = shot("home_orb") {
+        androidx.compose.runtime.CompositionLocalProvider(com.jarvis.launcher.ui.components.LocalCoreStyle provides "orb") {
+            home(CoreMode.SPEAKING, msg = "Particle orb core: speaking.")
+        }
+    }
+
     @Test fun homeListening() = shot("home_listening") {
         home(CoreMode.LISTENING, VoiceState(listening = true, level = 0.8f, partial = "set a timer for ten minutes"), "…")
     }

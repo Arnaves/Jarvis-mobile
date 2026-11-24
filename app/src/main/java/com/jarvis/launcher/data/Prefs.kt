@@ -95,6 +95,16 @@ class Prefs(context: Context) {
     val liveVoice: StateFlow<String> = _liveVoice.asStateFlow()
     fun setLiveVoice(v: String) { _liveVoice.value = v; sp.edit().putString("live_voice", v).apply() }
 
+    private val _edgeGlow = MutableStateFlow(sp.getBoolean("edge_glow", true))
+    /** Show a state-coloured glow around the screen edges over other apps. */
+    val edgeGlow: StateFlow<Boolean> = _edgeGlow.asStateFlow()
+    fun setEdgeGlow(v: Boolean) { _edgeGlow.value = v; sp.edit().putBoolean("edge_glow", v).apply() }
+
+    private val _coreStyle = MutableStateFlow(sp.getString("core_style", "reactor")!!)
+    /** "reactor" (arc reactor rings) or "orb" (particle sphere with energy beam). */
+    val coreStyle: StateFlow<String> = _coreStyle.asStateFlow()
+    fun setCoreStyle(v: String) { _coreStyle.value = v; sp.edit().putString("core_style", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }

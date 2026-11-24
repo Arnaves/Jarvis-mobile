@@ -31,6 +31,7 @@ Live internet lookups are optional; when one runs, only that question is sent.
 | AXIOM | **Brain switchboard**: CHAT / THINK (visible reasoning) / CODE / VISION, routed automatically (or pinned in Settings) |
 | AXIOM | **Camera → AI**: "what is this?" or the camera/gallery buttons in the console |
 | AXIOM + SONIC | **Default digital assistant** (hold power / corner swipe) and a **Quick Settings tile** for listening |
+| SONIC-inspired | **Edge glow** over any app (listening / thinking / speaking), **particle-orb core** option, one-page **system checklist** for every permission |
 
 Screen control, WhatsApp sending and YouTube buttons need **Settings › Phone control › Enable screen control**.
 "What's playing" needs media access, and brightness needs *Modify system settings*. JARVIS only acts on screen when you ask.

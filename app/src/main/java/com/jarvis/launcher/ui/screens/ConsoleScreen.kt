@@ -105,7 +105,7 @@ fun ConsoleScreen(
             .padding(horizontal = 14.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(56.dp)) { ArcReactor(mode, voice.level, Modifier.fillMaxSize()) }
+            Box(Modifier.size(56.dp)) { com.jarvis.launcher.ui.components.JarvisCore(mode, voice.level, Modifier.fillMaxSize()) }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text("J.A.R.V.I.S CONSOLE", style = HudType.title, color = hud.primary)

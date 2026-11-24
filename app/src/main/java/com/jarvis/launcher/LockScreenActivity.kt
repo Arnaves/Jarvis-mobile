@@ -81,7 +81,9 @@ class LockScreenActivity : ComponentActivity() {
 
         setContent {
             val themeId by app.prefs.theme.collectAsState()
+            val coreStyle by app.prefs.coreStyle.collectAsState()
             JarvisTheme(HudPalettes.byId(themeId)) {
+              androidx.compose.runtime.CompositionLocalProvider(com.jarvis.launcher.ui.components.LocalCoreStyle provides coreStyle) {
                 val sys by remember { app.monitor.flow() }.collectAsStateWithLifecycle(SystemSnapshot())
                 val mode by app.assistant.mode.collectAsStateWithLifecycle()
                 val voice by app.assistant.voiceState.collectAsStateWithLifecycle()
@@ -106,6 +108,7 @@ class LockScreenActivity : ComponentActivity() {
                         onUnlocked = { dismiss() },
                     )
                 }
+              }
             }
         }
     }
@@ -129,11 +132,13 @@ class LockScreenActivity : ComponentActivity() {
         // (e.g. lock delay not elapsed, or we were launched late after biometric unlock).
         if (pm.isInteractive && !km.isKeyguardLocked && reason == Reason.ARM) { finishQuietly(); return }
         visible = true
+        app.uiVisible.value = true
         if (pm.isInteractive) showCount++
     }
 
     override fun onStop() {
         visible = false
+        app.uiVisible.value = false
         super.onStop()
     }
 

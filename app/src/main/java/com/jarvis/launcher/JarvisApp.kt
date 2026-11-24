@@ -1,6 +1,7 @@
 package com.jarvis.launcher
 
 import android.app.Application
+import androidx.compose.ui.graphics.toArgb
 import com.jarvis.launcher.ai.Assistant
 import com.jarvis.launcher.ai.HandsFree
 import com.jarvis.launcher.ai.WakeModelStore
@@ -33,6 +34,10 @@ class JarvisApp : Application() {
     lateinit var tasks: com.jarvis.launcher.ai.TaskEngine; private set
     lateinit var gemini: com.jarvis.launcher.ai.GeminiClient; private set
 
+    /** True while a JARVIS screen (home/console/lock) is in front: the edge glow is redundant there. */
+    val uiVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    lateinit var edgeGlow: com.jarvis.launcher.ui.overlay.EdgeGlow; private set
+
     /** Fires when a charger is connected (UI plays the power-surge animation). */
     val powerSurge = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
@@ -63,6 +68,21 @@ class JarvisApp : Application() {
         tasks.executor = { cmd -> assistant.runTask(cmd) }
         tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
         tasks.rearm()
+        edgeGlow = com.jarvis.launcher.ui.overlay.EdgeGlow(this)
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(assistant.mode, prefs.edgeGlow, prefs.theme, uiVisible) { m, on, theme, ui -> listOf(m, on, theme, ui) }
+                .collect { (mAny, onAny, themeAny, uiAny) ->
+                    val m = mAny as com.jarvis.launcher.ai.CoreMode
+                    val on = onAny as Boolean; val theme = themeAny as String; val ui = uiAny as Boolean
+                    val pal = com.jarvis.launcher.ui.theme.HudPalettes.byId(theme)
+                    val color = when (m) {
+                        com.jarvis.launcher.ai.CoreMode.THINKING -> pal.warn
+                        com.jarvis.launcher.ai.CoreMode.SPEAKING -> pal.secondary
+                        else -> pal.primary
+                    }
+                    if (on && !ui) edgeGlow.show(m, color.toArgb()) else edgeGlow.hide()
+                }
+        }
         appScope.launch { prefs.speechLanguage.collect { kotlinx.coroutines.delay(1500); speaker.setLanguage(it) } }
         handsFree = HandsFree(this, voice, speaker, assistant, prefs, WakeModelStore(this))
 
