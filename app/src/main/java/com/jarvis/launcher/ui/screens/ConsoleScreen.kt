@@ -35,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
@@ -83,6 +85,8 @@ fun ConsoleScreen(
     onStop: () -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit,
+    onCamera: () -> Unit = {},
+    onGallery: () -> Unit = {},
 ) {
     val hud = LocalHud.current
     var input by remember { mutableStateOf("") }
@@ -115,6 +119,8 @@ fun ConsoleScreen(
                     style = HudType.label, color = hud.textDim, maxLines = 1,
                 )
             }
+            IconButton(onClick = onCamera) { Icon(Icons.Outlined.PhotoCamera, "Ask about a photo", tint = hud.primary) }
+            IconButton(onClick = onGallery) { Icon(Icons.Outlined.Image, "Ask about an image", tint = hud.primary) }
             IconButton(onClick = onClear) { Icon(Icons.Outlined.DeleteSweep, "Clear", tint = hud.textDim) }
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = hud.primary) }
         }
@@ -227,15 +233,25 @@ private fun MessageBubble(m: ChatMessage, ghost: Boolean = false) {
                         ChatMessage.Source.NEURAL -> "JARVIS · NEURAL"
                         ChatMessage.Source.SYSTEM -> "JARVIS · SYSTEM"
                         ChatMessage.Source.WEB -> "JARVIS · UPLINK"
-                        ChatMessage.Source.CLOUD -> "JARVIS · GEMINI"
+                        ChatMessage.Source.CLOUD -> "JARVIS · GEMINI" + (m.brain?.let { " · $it" } ?: "")
                         else -> "JARVIS · COMMAND"
                     },
                     style = HudType.label.copy(fontSize = 8.sp), color = hud.textDim,
                 )
                 Spacer(Modifier.height(3.dp))
             }
+            if (m.thoughts.isNotBlank()) {
+                var open by remember(m.id) { mutableStateOf(false) }
+                Text(
+                    (if (open) "▾ REASONING" else "▸ REASONING") + if (m.streaming && m.text.isEmpty()) " …" else "",
+                    style = HudType.label.copy(fontSize = 9.sp), color = hud.secondary,
+                    modifier = Modifier.clickable { open = !open }.padding(vertical = 2.dp),
+                )
+                if (open) Text(m.thoughts, style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim)
+                Spacer(Modifier.height(4.dp))
+            }
             val text = if (m.streaming && m.text.isEmpty()) "▍" else if (m.streaming) m.text + " ▍" else m.text
-            Text(text, style = HudType.body, color = hud.text)
+            Text(text, style = HudType.body.copy(fontFamily = if (m.brain == "CODE") com.jarvis.launcher.ui.theme.HudMono else HudType.body.fontFamily), color = hud.text)
         }
     }
 }

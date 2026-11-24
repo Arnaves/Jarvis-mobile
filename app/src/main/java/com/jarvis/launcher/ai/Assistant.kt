@@ -27,6 +27,10 @@ data class ChatMessage(
     val text: String,
     val streaming: Boolean = false,
     val source: Source = Source.SKILL,
+    /** THINK brain: the model's visible reasoning. */
+    val thoughts: String = "",
+    /** Which brain answered (CHAT/THINK/CODE/VISION), for cloud replies. */
+    val brain: String? = null,
 ) {
     enum class Source { USER, SKILL, NEURAL, SYSTEM, WEB, CLOUD }
 }
@@ -36,6 +40,8 @@ enum class CoreMode { IDLE, LISTENING, THINKING, SPEAKING }
 sealed interface AssistantEvent {
     data class RequestPermission(val permission: String) : AssistantEvent
     data object LeaveLauncher : AssistantEvent
+    /** Ask the UI to take a photo and hand it to [Assistant.askVision] with [prompt]. */
+    data class CaptureImage(val prompt: String) : AssistantEvent
 }
 
 class Assistant(
@@ -150,6 +156,8 @@ class Assistant(
             return
         }
 
+        visionIntent(text)?.let { return }
+
         val reply = runCatching { skills.handle(text) }.getOrNull()
         if (reply != null) {
             deliver(reply)
@@ -256,19 +264,21 @@ class Assistant(
 
     private val currentEvents = Regex("\\b(today|tonight|latest|current|currently|now|news|score|won|winner|price|stock|election|this week|this year|recent|happening)\\b")
 
-    private suspend fun askGemini(text: String, grounded: Boolean) {
+    private suspend fun askGemini(text: String, grounded: Boolean, image: ByteArray? = null) {
         val id = ids.incrementAndGet()
-        add(ChatMessage(id, false, "", streaming = true, source = ChatMessage.Source.CLOUD))
+        val brain = Brain.route(text, image != null, Brain.of(prefs.brainMode.value))
+        add(ChatMessage(id, false, "", streaming = true, source = ChatMessage.Source.CLOUD, brain = brain.name))
         thinking.value = true
-        geminiHistory += GeminiClient.Turn(true, text)
+        geminiHistory += GeminiClient.Turn(true, text, image)
         while (geminiHistory.size > 20) geminiHistory.removeAt(0)
         val sb = StringBuilder()
         var failed: Throwable? = null
         try {
-            gemini.stream(systemInstruction(cloud = true), geminiHistory.toList(), grounded).collect { delta ->
-                sb.append(delta)
-                update(id, visible(sb.toString()), streaming = true)
-            }
+            gemini.stream(systemInstruction(cloud = true, brain = brain), geminiHistory.toList(), grounded && brain != Brain.CODE, think = brain == Brain.THINK)
+                .collect { delta ->
+                    sb.append(delta)
+                    updateSplit(id, sb.toString(), streaming = true)
+                }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) {
                 update(id, visible(sb.toString()).ifBlank { "Cancelled." }, streaming = false)
@@ -301,17 +311,69 @@ class Assistant(
             return
         }
         val full = sb.toString()
-        geminiHistory += GeminiClient.Turn(false, full)
-        val answer = visible(full).ifBlank { "Done." }
-        update(id, answer, streaming = false)
-        val action = Regex("ACTION:\\s*(.+)", RegexOption.IGNORE_CASE).find(full)?.groupValues?.get(1)?.trim()
+        val (_, answerRaw) = Brain.splitThoughts(full)
+        // Don't keep image bytes in the running history.
+        if (image != null) geminiHistory[geminiHistory.lastIndex] = GeminiClient.Turn(true, "$text [image shared]")
+        geminiHistory += GeminiClient.Turn(false, answerRaw)
+        updateSplit(id, full, streaming = false)
+        val answer = visible(answerRaw).ifBlank { "Done." }
+        val action = Regex("ACTION:\\s*(.+)", RegexOption.IGNORE_CASE).find(answerRaw)?.groupValues?.get(1)?.trim()
         val actionReply = action?.let { runCatching { skills.handle(it) }.getOrNull() }
         if (actionReply != null) deliver(actionReply)
-        else if (prefs.voiceReplies.value) speaker.speak(answer.replace(Regex("\\[\\d+\\]"), ""))
+        else if (prefs.voiceReplies.value) speaker.speak(Brain.speakable(answer))
+    }
+
+    private fun updateSplit(id: Long, raw: String, streaming: Boolean) {
+        val (thoughts, answer) = Brain.splitThoughts(raw)
+        _messages.value = _messages.value.map {
+            if (it.id == id) it.copy(text = visible(answer), thoughts = thoughts, streaming = streaming) else it
+        }
+    }
+
+    // ---------------------------------------------------------------- vision
+
+    private val screenAsk = Regex("(what('s| is) on (my|the|this) screen|analy[sz]e (my |the |this )?screen|explain (this|my|the) screen|summari[sz]e (this|the) (screen|page|article)|deep analy[sz]e|look at (my|the) screen|what am i looking at on (the )?screen|help me with this screen)")
+    private val cameraAsk = Regex("^(what('s| is) this|look at this|identify this|what am i looking at|what do you see|scan this|read this( label| text| sign)?|what is this (thing|object|plant|food)|translate this sign)")
+
+    /** Starts a VISION request if [text] asks about the screen or the camera. Returns non-null if handled. */
+    private fun visionIntent(text: String): Unit? {
+        val q = text.lowercase().replace(Regex("^(hey |ok |okay )?jarvis[,.!]?\\s*"), "").trim().trimEnd('?', '.', '!')
+        val screen = screenAsk.containsMatchIn(q)
+        val camera = !screen && cameraAsk.containsMatchIn(q)
+        if (!screen && !camera) return null
+        if (!gemini.available) {
+            post("Vision needs the Gemini brain, ${prefs.userTitle.value}. Add your API key in Settings.", ChatMessage.Source.SYSTEM)
+            return Unit
+        }
+        if (camera) {
+            _events.tryEmit(AssistantEvent.CaptureImage(text))
+            return Unit
+        }
+        val svc = com.jarvis.launcher.service.JarvisAccessibility.instance
+        generation = scope.launch {
+            val shot = if (android.os.Build.VERSION.SDK_INT >= 30) svc?.screenshot() else null
+            if (shot != null) askVision(text, Vision.jpeg(shot))
+            else {
+                val textOnScreen = svc?.readScreen(4000).orEmpty()
+                if (textOnScreen.isBlank()) post("Enable JARVIS screen control in Settings so I can see the screen.", ChatMessage.Source.SYSTEM)
+                else askGemini("$text\n\n[Screen text]: $textOnScreen", grounded = false)
+            }
+        }
+        return Unit
+    }
+
+    /** Ask the VISION brain about [jpeg] (camera photo, gallery image or screenshot). */
+    fun askVision(prompt: String, jpeg: ByteArray) {
+        if (!gemini.available) {
+            post("Vision needs the Gemini brain. Add your API key in Settings.", ChatMessage.Source.SYSTEM); return
+        }
+        add(ChatMessage(ids.incrementAndGet(), true, "📷 $prompt", source = ChatMessage.Source.USER))
+        generation?.cancel()
+        generation = scope.launch { askGemini(prompt, grounded = false, image = jpeg) }
     }
 
     /** Persona, phone-control protocol, the user's notes and live device context. */
-    private fun systemInstruction(cloud: Boolean): String {
+    private fun systemInstruction(cloud: Boolean, brain: Brain = Brain.CHAT): String {
         val now = SimpleDateFormat("EEEE d MMMM yyyy, HH:mm", Locale.getDefault()).format(Date())
         val s = runCatching { monitor.snapshot() }.getOrNull()
         val title = prefs.userTitle.value
@@ -321,6 +383,12 @@ class Assistant(
             append("Address the user as \"$title\". Replies are spoken aloud: keep them short and conversational (under 80 words), ")
             append("no markdown, no bullet lists, no URLs, unless the user asks for detail. ")
             if (cloud) append("You have Google Search for current information; use it for news, facts, sports, prices and anything time-sensitive. ")
+            when (brain) {
+                Brain.THINK -> append("THINK mode: reason step by step, then give a clear, concise conclusion. ")
+                Brain.CODE -> append("CODE mode: give correct, complete code in fenced code blocks with a one-line explanation; the word limit does not apply to code. ")
+                Brain.VISION -> append("VISION mode: an image is attached (camera photo or a screenshot of the user's phone). Answer about what is in it; read any text precisely. ")
+                Brain.CHAT -> {}
+            }
             append("If the user wants the phone to do something, add a final line exactly like `ACTION: <command>` using one of: ")
             append("open <app name> | set a timer for <n> minutes | set an alarm for <hh:mm> | call <contact> | text <contact> saying <message> | ")
             append("send a whatsapp to <contact> saying <message> | navigate to <place> | flashlight on | flashlight off | play music | pause music | ")

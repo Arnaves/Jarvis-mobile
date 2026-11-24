@@ -76,6 +76,11 @@ class Prefs(context: Context) {
     val romanLetters: StateFlow<Boolean> = _roman.asStateFlow()
     fun setRomanLetters(v: Boolean) { _roman.value = v; sp.edit().putBoolean("roman", v).apply() }
 
+    private val _brain = MutableStateFlow(sp.getString("brain", "AUTO")!!)
+    /** "AUTO" lets the router pick CHAT/THINK/CODE; otherwise a fixed Brain name. */
+    val brainMode: StateFlow<String> = _brain.asStateFlow()
+    fun setBrainMode(v: String) { _brain.value = v; sp.edit().putString("brain", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }

@@ -229,6 +229,21 @@ fun SettingsScreen(
                         style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
                     )
                     Spacer(Modifier.height(10.dp))
+                    Text("BRAIN SWITCHBOARD", style = HudType.label, color = hud.textDim)
+                    Spacer(Modifier.height(6.dp))
+                    val brainMode by prefs.brainMode.collectAsState()
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("Auto", selected = brainMode == "AUTO") { prefs.setBrainMode("AUTO") }
+                        listOf(com.jarvis.launcher.ai.Brain.CHAT, com.jarvis.launcher.ai.Brain.THINK, com.jarvis.launcher.ai.Brain.CODE).forEach { b ->
+                            Chip(b.label, selected = brainMode == b.name) { prefs.setBrainMode(b.name) }
+                        }
+                    }
+                    Text(
+                        "Auto routes each request: CHAT for everyday questions, THINK for plans, maths and decisions (tap ▸ REASONING " +
+                            "in the console to see its thinking), CODE for programming, VISION for photos and \"what's on my screen?\".",
+                        style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                    )
+                    Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         HudButton(if (verifying) "VERIFYING…" else "VERIFY", enabled = !verifying) {
                             verifying = true

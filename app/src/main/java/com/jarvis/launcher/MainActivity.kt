@@ -77,6 +77,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ---------------------------------------------------------------- VISION (camera / gallery)
+    private var visionPrompt = "What is this?"
+    private var photoUri: android.net.Uri? = null
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val uri = photoUri
+        if (ok && uri != null) analyze(uri, visionPrompt)
+    }
+    private val pickImage = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) analyze(uri, visionPrompt)
+    }
+
+    private fun analyze(uri: android.net.Uri, prompt: String) {
+        screen = Screen.CONSOLE
+        lifecycleScope.launch {
+            val jpeg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.jarvis.launcher.ai.Vision.fromUri(this@MainActivity, uri) }
+            if (jpeg == null) toast("Couldn't read that image") else app.assistant.askVision(prompt, jpeg)
+        }
+    }
+
+    fun capturePhoto(prompt: String = "What is this?") {
+        visionPrompt = prompt
+        val f = java.io.File(cacheDir, "vision/shot.jpg").apply { parentFile?.mkdirs(); delete() }
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f)
+        photoUri = uri
+        runCatching { takePhoto.launch(uri) }.onFailure { toast("No camera app available") }
+    }
+
+    fun pickPhoto(prompt: String = "Describe this image.") {
+        visionPrompt = prompt
+        pickImage.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
@@ -91,6 +123,15 @@ class MainActivity : ComponentActivity() {
                 when (e) {
                     is AssistantEvent.RequestPermission -> genericPermission.launch(e.permission)
                     AssistantEvent.LeaveLauncher -> screen = Screen.HOME
+                    is AssistantEvent.CaptureImage -> {
+                        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) capturePhoto(e.prompt)
+                        else runCatching {
+                            // Asked hands-free from another app: bring JARVIS forward to take the photo.
+                            startActivity(Intent(this@MainActivity, MainActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                                .putExtra(EXTRA_CAPTURE, e.prompt))
+                        }
+                    }
                 }
             }
         }
@@ -181,6 +222,8 @@ class MainActivity : ComponentActivity() {
                     onMic = { startListening() },
                     onStop = { app.assistant.cancel() },
                     onClear = { app.assistant.clearConversation() },
+                    onCamera = { capturePhoto() },
+                    onGallery = { pickPhoto() },
                     onClose = { screen = Screen.HOME },
                 )
             }
@@ -272,6 +315,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_CAPTURE)?.let { prompt ->
+            intent.removeExtra(EXTRA_CAPTURE)
+            window.decorView.post { capturePhoto(prompt) }
+            return
+        }
         // Tapped "Run now" on a deferred task notification (e.g. WhatsApp on arrival).
         intent?.getStringExtra(com.jarvis.launcher.ai.TaskEngine.EXTRA_RUN_COMMAND)?.let { cmd ->
             intent.removeExtra(com.jarvis.launcher.ai.TaskEngine.EXTRA_RUN_COMMAND)
@@ -313,4 +361,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    companion object {
+        const val EXTRA_CAPTURE = "vision_capture"
+    }
 }

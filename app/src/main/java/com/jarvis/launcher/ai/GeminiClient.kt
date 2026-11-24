@@ -51,7 +51,8 @@ class GeminiClient(private val context: Context) {
     )
     val state: StateFlow<GeminiState> = _state.asStateFlow()
 
-    data class Turn(val user: Boolean, val text: String)
+    /** One conversation turn; [image] (JPEG bytes) is sent as inline data for VISION. */
+    data class Turn(val user: Boolean, val text: String, val image: ByteArray? = null)
 
     private val online: Boolean
         get() {
@@ -130,7 +131,7 @@ class GeminiClient(private val context: Context) {
      * On quota (429), missing model (404) or overload (5xx) before any text arrives, it retries
      * without search grounding, then fails over to the next model automatically.
      */
-    fun stream(system: String, history: List<Turn>, grounded: Boolean): Flow<String> = flow {
+    fun stream(system: String, history: List<Turn>, grounded: Boolean, think: Boolean = false): Flow<String> = flow {
         val key = secrets.get(KEY) ?: throw IllegalStateException("No Gemini API key")
         val models = candidates()
         if (models.isEmpty()) {
@@ -141,9 +142,18 @@ class GeminiClient(private val context: Context) {
         var emitted = false
         for (model in models) {
             val modes = if (grounded) listOf(true, false) else listOf(false)
+            var thinkHere = think
             for (g in modes) {
                 try {
-                    streamOnce(key, model, system, history, g).collect { emitted = true; emit(it) }
+                    try {
+                        streamOnce(key, model, system, history, g, thinkHere).collect { emitted = true; emit(it) }
+                    } catch (e: HttpError) {
+                        // Some models don't accept a thinking config: retry plainly.
+                        if (e.code == 400 && thinkHere && !emitted) {
+                            thinkHere = false
+                            streamOnce(key, model, system, history, g, false).collect { emitted = true; emit(it) }
+                        } else throw e
+                    }
                     if (_state.value.activeModel != model) {
                         _state.value = _state.value.copy(
                             activeModel = model,
@@ -174,16 +184,25 @@ class GeminiClient(private val context: Context) {
         )
     }.flowOn(Dispatchers.IO)
 
-    private fun streamOnce(key: String, model: String, system: String, history: List<Turn>, grounded: Boolean): Flow<String> = flow {
+    /** Thoughts (THINK brain) are emitted wrapped in <think>…</think>. */
+    private fun streamOnce(key: String, model: String, system: String, history: List<Turn>, grounded: Boolean, think: Boolean): Flow<String> = flow {
         val body = JSONObject().apply {
             put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             put("contents", JSONArray().apply {
                 history.forEach { t ->
-                    put(JSONObject().put("role", if (t.user) "user" else "model").put("parts", JSONArray().put(JSONObject().put("text", t.text))))
+                    val parts = JSONArray()
+                    t.image?.let { img ->
+                        parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg")
+                            .put("data", android.util.Base64.encodeToString(img, android.util.Base64.NO_WRAP))))
+                    }
+                    parts.put(JSONObject().put("text", t.text))
+                    put(JSONObject().put("role", if (t.user) "user" else "model").put("parts", parts))
                 }
             })
             if (grounded) put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
-            put("generationConfig", JSONObject().put("temperature", 0.7).put("maxOutputTokens", 1024))
+            put("generationConfig", JSONObject().put("temperature", if (think) 1.0 else 0.7).put("maxOutputTokens", if (think) 4096 else 2048).apply {
+                if (think) put("thinkingConfig", JSONObject().put("includeThoughts", true).put("thinkingBudget", 2048))
+            })
         }
         val c = (URL("$BASE/models/$model:streamGenerateContent?alt=sse").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -193,6 +212,7 @@ class GeminiClient(private val context: Context) {
             connectTimeout = 10_000; readTimeout = 60_000
         }
         currentCoroutineContext().job.invokeOnCompletion { runCatching { c.disconnect() } }
+        var inThink = false
         try {
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             if (c.responseCode !in 200..299) {
@@ -206,11 +226,17 @@ class GeminiClient(private val context: Context) {
                     val o = runCatching { JSONObject(line.removePrefix("data:").trim()) }.getOrNull() ?: continue
                     val parts = o.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: continue
                     for (i in 0 until parts.length()) {
-                        val t = parts.optJSONObject(i)?.optString("text").orEmpty()
-                        if (t.isNotEmpty()) emit(t)
+                        val part = parts.optJSONObject(i) ?: continue
+                        val t = part.optString("text")
+                        if (t.isEmpty()) continue
+                        val thought = part.optBoolean("thought", false)
+                        if (thought && !inThink) { emit("<think>"); inThink = true }
+                        if (!thought && inThink) { emit("</think>"); inThink = false }
+                        emit(t)
                     }
                 }
             }
+            if (inThink) emit("</think>")
         } finally { c.disconnect() }
     }
 
