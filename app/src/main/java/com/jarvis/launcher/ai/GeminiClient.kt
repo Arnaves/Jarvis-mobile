@@ -29,6 +29,8 @@ data class GeminiState(
     val verified: Boolean = false,
     /** The model that actually answered last (differs from [model] after a quota failover). */
     val activeModel: String? = null,
+    /** Models that support the Live (bidiGenerateContent) API, best first. */
+    val liveModels: List<String> = emptyList(),
 )
 
 /**
@@ -46,6 +48,7 @@ class GeminiClient(private val context: Context) {
             model = sp.getString("model", DEFAULT_MODEL)!!,
             models = sp.getString("models", "")!!.split(',').filter { it.isNotBlank() },
             verified = sp.getBoolean("verified", false),
+            liveModels = sp.getString("live_models", "")!!.split(',').filter { it.isNotBlank() },
             status = if (secrets.has(KEY)) "Key stored" else "No API key",
         )
     )
@@ -64,6 +67,9 @@ class GeminiClient(private val context: Context) {
     /** Ready to answer right now (key present, enabled, network up). */
     val available: Boolean get() = _state.value.hasKey && _state.value.enabled && online
 
+    /** For the Live WebSocket, which authenticates with the key as a query parameter. */
+    internal fun apiKey(): String? = secrets.get(KEY)
+
     fun setKey(key: String) {
         secrets.put(KEY, key.trim())
         sp.edit().putBoolean("verified", false).apply()
@@ -80,6 +86,8 @@ class GeminiClient(private val context: Context) {
     fun setModel(m: String) { sp.edit().putString("model", m).apply(); _state.value = _state.value.copy(model = m) }
 
     /** Checks the key and lists the chat models it can use. */
+    private var liveFound: List<String> = emptyList()
+
     suspend fun verify(): Result<List<String>> = withContext(Dispatchers.IO) {
         val key = secrets.get(KEY) ?: return@withContext Result.failure(IllegalStateException("No API key"))
         _state.value = _state.value.copy(status = "Verifying…")
@@ -91,11 +99,14 @@ class GeminiClient(private val context: Context) {
             try {
                 if (c.responseCode !in 200..299) throw IllegalStateException(errorMessage(c))
                 val arr = JSONObject(c.inputStream.bufferedReader().readText()).optJSONArray("models") ?: JSONArray()
-                (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
-                    .filter { m ->
-                        val methods = m.optJSONArray("supportedGenerationMethods")
-                        (0 until (methods?.length() ?: 0)).any { methods!!.optString(it) == "generateContent" }
-                    }
+                val all = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                fun supports(m: JSONObject, method: String): Boolean {
+                    val methods = m.optJSONArray("supportedGenerationMethods") ?: return false
+                    return (0 until methods.length()).any { methods.optString(it) == method }
+                }
+                liveFound = all.filter { supports(it, "bidiGenerateContent") }.map { it.optString("name").removePrefix("models/") }
+                    .sortedWith(compareBy<String> { if (it.contains("native-audio")) 0 else if (it.contains("live")) 1 else 2 }.thenByDescending { it })
+                all.filter { supports(it, "generateContent") }
                     .map { it.optString("name").removePrefix("models/") }
                     .filter { it.startsWith("gemini") && !it.contains("embedding") && !it.contains("tts") && !it.contains("image") }
                     .let(::rank)
@@ -103,8 +114,12 @@ class GeminiClient(private val context: Context) {
         }.onSuccess { list ->
             val current = _state.value.model
             val pick = if (current in list) current else list.firstOrNull { it.contains("flash") && !it.contains("lite") } ?: list.firstOrNull() ?: current
-            sp.edit().putBoolean("verified", true).putString("models", list.joinToString(",")).putString("model", pick).apply()
-            _state.value = _state.value.copy(verified = true, models = list, model = pick, status = "Connected · ${list.size} models available")
+            sp.edit().putBoolean("verified", true).putString("models", list.joinToString(",")).putString("model", pick)
+                .putString("live_models", liveFound.joinToString(",")).apply()
+            _state.value = _state.value.copy(
+                verified = true, models = list, model = pick, liveModels = liveFound,
+                status = "Connected · ${list.size} models" + if (liveFound.isNotEmpty()) " · Live voice available" else "",
+            )
         }.onFailure {
             _state.value = _state.value.copy(verified = false, status = "Verification failed: ${it.message}")
         }

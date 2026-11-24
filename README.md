@@ -16,6 +16,25 @@ Live internet lookups are optional; when one runs, only that question is sent.
 - Boot sequence and first-run setup
 - Can be picked as the device's assist app (long-press home or power, depending on the device)
 
+**Best of JARVIS + SONIC + AXIOM**
+
+| From | Feature |
+|---|---|
+| SONIC | **Gemini Live**: real-time voice conversation that can run phone commands mid-chat (Settings › AI brain) |
+| SONIC | **Screen control**: "read the screen", "tap Sign in", "type …", "paste", "scroll down", "swipe left", "go back", "go home", "recent apps", "open notifications", "lock the phone", "take a screenshot" |
+| SONIC | **Deep Analyze**: "what's on my screen?" sends a screenshot to Gemini Vision |
+| SONIC | **WhatsApp draft → "send it"**, Direct message option, chat-name check before sending, several recipients ("WhatsApp Rahul and Priya saying …"), "draft …" never sends |
+| SONIC | **Roman letters**: Hindi/Marathi/Bengali/Tamil… speech becomes "kya kar rahe ho" |
+| SONIC | Spotify / YouTube Music play-from-search, YouTube search & play, **like / dislike / subscribe / skip ad**, "what's playing", media-session control |
+| SONIC | Brightness ("brightness 60 percent", "max brightness", "adaptive brightness"), gallery, countdown photo, video camera, clipboard ("copy …") |
+| SONIC | Speech language profiles (English India/UK/US, Hindi, Marathi, Bengali, Gujarati, Tamil, Telugu, Kannada, Malayalam, Punjabi, Urdu, Odia, Assamese, Nepali) |
+| AXIOM | **Brain switchboard**: CHAT / THINK (visible reasoning) / CODE / VISION, routed automatically (or pinned in Settings) |
+| AXIOM | **Camera → AI**: "what is this?" or the camera/gallery buttons in the console |
+| AXIOM + SONIC | **Default digital assistant** (hold power / corner swipe) and a **Quick Settings tile** for listening |
+
+Screen control, WhatsApp sending and YouTube buttons need **Settings › Phone control › Enable screen control**.
+"What's playing" needs media access, and brightness needs *Modify system settings*. JARVIS only acts on screen when you ask.
+
 **Hands-free: "Hey JARVIS"**
 - Say **"Hey JARVIS"** at any time: on the home screen, inside other apps, or with the screen off.
   He replies **"Yes, sir?"** and listens for **5 seconds**. If you say nothing, he goes back to standby.

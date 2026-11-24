@@ -56,6 +56,7 @@ class Assistant(
     private val concierge: Concierge,
     private val briefing: Briefing,
     private val gemini: GeminiClient,
+    val live: GeminiLive,
 ) {
     private val geminiHistory = ArrayList<GeminiClient.Turn>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -69,8 +70,11 @@ class Assistant(
     private val _events = MutableSharedFlow<AssistantEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<AssistantEvent> = _events.asSharedFlow()
 
-    val mode: StateFlow<CoreMode> = combine(voice.state, thinking, speaker.speaking) { v, t, s ->
+    val mode: StateFlow<CoreMode> = combine(voice.state, thinking, speaker.speaking, live.state) { v, t, s, l ->
         when {
+            l == GeminiLive.State.SPEAKING -> CoreMode.SPEAKING
+            l == GeminiLive.State.LISTENING -> CoreMode.LISTENING
+            l == GeminiLive.State.CONNECTING -> CoreMode.THINKING
             v.listening -> CoreMode.LISTENING
             t -> CoreMode.THINKING
             s -> CoreMode.SPEAKING
@@ -97,7 +101,54 @@ class Assistant(
         post("${skills.timeGreeting()}, ${prefs.userTitle.value}. $core How can I help?", ChatMessage.Source.SYSTEM, speak = false)
     }
 
+    // ---------------------------------------------------------------- Gemini Live
+
+    /** Live mode is chosen in Settings and usable right now. */
+    val liveReady: Boolean get() = prefs.liveMode.value && gemini.available
+
+    /** Starts a real-time voice conversation; [onEnded] runs when it finishes. */
+    fun startLive(idleTimeoutMs: Long = 45_000, onEnded: (() -> Unit)? = null) {
+        if (live.active) return
+        speaker.stop(); voice.stop()
+        live.onLine = { l -> add(ChatMessage(ids.incrementAndGet(), l.user, l.text, source = if (l.user) ChatMessage.Source.USER else ChatMessage.Source.CLOUD, brain = if (l.user) null else "LIVE")) }
+        live.onCommand = { cmd -> executeCommand(cmd) }
+        live.onEnded = {
+            if (live.state.value == GeminiLive.State.ERROR) post(live.status.value, ChatMessage.Source.SYSTEM, speak = false)
+            onEnded?.invoke()
+        }
+        val sys = systemInstruction(cloud = true) +
+            "\nYou are in a live, real-time voice conversation. Keep replies brief and natural. " +
+            "For anything the phone should do, call the phone_command tool with a plain-English command, then tell the user the result. " +
+            "If the user says goodbye or thanks you and is done, say a short goodbye."
+        live.start(sys, prefs.liveVoice.value, idleTimeoutMs)
+    }
+
+    fun stopLive() = live.stop()
+
+    /** Runs one phone command for Gemini Live and returns what happened. */
+    private suspend fun executeCommand(cmd: String): String {
+        val text = stripWake(cmd.trim())
+        if (text.isBlank()) return "No command given."
+        concierge.classify(text)?.let { return concierge.handle(it).also { r -> runReply(r) }.text }
+        TaskParser.parse(text)?.let { return tasks.schedule(it).also { r -> runReply(r) }.text }
+        if (briefing.matches(text)) return briefing.compose()
+        tasks.meta(text)?.let { return it().also { r -> runReply(r) }.text }
+        runCatching { skills.handle(text) }.getOrNull()?.let { r -> runReply(r); return r.text }
+        if (prefs.webEnabled.value) web.classify(text)?.takeIf { it !is WebKnowledge.Query.Fact }?.let {
+            return web.answer(it, prefs.userTitle.value).text
+        }
+        return "That isn't a phone command I know. Answer the user directly instead."
+    }
+
+    /** Performs a reply's side effects without speaking (Live speaks for itself). */
+    private fun runReply(r: Reply) {
+        r.permission?.let { _events.tryEmit(AssistantEvent.RequestPermission(it)) }
+        r.action?.let { runCatching { it() } }
+        if (r.leavesLauncher) _events.tryEmit(AssistantEvent.LeaveLauncher)
+    }
+
     fun listen() {
+        if (liveReady) { if (live.active) stopLive() else startLive(); return }
         speaker.stop()
         if (!voice.available) {
             post("Speech recognition isn't available on this device. You can type to me instead.", ChatMessage.Source.SYSTEM)
@@ -109,6 +160,7 @@ class Assistant(
     fun stopListening() = voice.stop()
 
     fun cancel() {
+        if (live.active) live.stop()
         generation?.cancel()
         voice.stop()
         speaker.stop()

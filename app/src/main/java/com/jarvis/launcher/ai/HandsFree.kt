@@ -121,6 +121,12 @@ class HandsFree(
             run(remainder)
             return
         }
+        if (assistant.liveReady) {
+            // Gemini Live: talk freely; standby resumes after ~20 s of silence.
+            _state.value = State.BUSY
+            assistant.startLive(idleTimeoutMs = 20_000) { sleep() }
+            return
+        }
         _state.value = State.AWAKE
         speaker.speak("Yes, ${prefs.userTitle.value}?") { listenForCommand() }
     }
@@ -162,6 +168,12 @@ class HandsFree(
         if (!enabled) { assistant.listen(); return }
         job?.cancel()
         engine?.stop()
+        if (assistant.liveReady) {
+            if (assistant.live.active) { assistant.stopLive(); return }
+            _state.value = State.BUSY
+            assistant.startLive(idleTimeoutMs = 45_000) { sleep() }
+            return
+        }
         speaker.stop()
         _state.value = State.AWAKE
         voice.start(

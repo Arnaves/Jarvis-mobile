@@ -86,6 +86,15 @@ class Prefs(context: Context) {
     val speechLanguage: StateFlow<String> = _speechLang.asStateFlow()
     fun setSpeechLanguage(v: String) { _speechLang.value = v; sp.edit().putString("speech_lang", v).apply() }
 
+    private val _live = MutableStateFlow(sp.getBoolean("live_mode", false))
+    /** Conversation mode: Gemini Live (real-time voice) instead of command-by-command. */
+    val liveMode: StateFlow<Boolean> = _live.asStateFlow()
+    fun setLiveMode(v: Boolean) { _live.value = v; sp.edit().putBoolean("live_mode", v).apply() }
+
+    private val _liveVoice = MutableStateFlow(sp.getString("live_voice", "Charon")!!)
+    val liveVoice: StateFlow<String> = _liveVoice.asStateFlow()
+    fun setLiveVoice(v: String) { _liveVoice.value = v; sp.edit().putString("live_voice", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }

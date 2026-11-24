@@ -59,7 +59,7 @@ class JarvisApp : Application() {
         val concierge = com.jarvis.launcher.ai.Concierge(this, prefs, contacts, apps)
         val briefing = com.jarvis.launcher.ai.Briefing(prefs, tasks, monitor, web)
         gemini = com.jarvis.launcher.ai.GeminiClient(this)
-        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge, briefing, gemini)
+        assistant = Assistant(skills, llm, voice, speaker, prefs, monitor, web, tasks, concierge, briefing, gemini, com.jarvis.launcher.ai.GeminiLive(this, gemini))
         tasks.executor = { cmd -> assistant.runTask(cmd) }
         tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
         tasks.rearm()

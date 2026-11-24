@@ -251,6 +251,25 @@ fun SettingsScreen(
                         style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
                     )
                     Spacer(Modifier.height(10.dp))
+                    val liveOn by prefs.liveMode.collectAsState()
+                    val liveVoice by prefs.liveVoice.collectAsState()
+                    ToggleRow("Gemini Live conversations (real-time voice)", liveOn) { prefs.setLiveMode(it) }
+                    Text(
+                        "On: tapping the core or saying the wake word starts a natural, back-and-forth voice conversation with Gemini. " +
+                            "It can still run phone commands mid-conversation, and ends after a quiet spell (tap the core to end it). " +
+                            "Live streams your microphone audio to Google while it's on, and uses more quota." +
+                            if (gem.verified && gem.liveModels.isEmpty()) " Your key reported no Live models; JARVIS will try the standard ones." else "",
+                        style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                    )
+                    if (liveOn) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("LIVE VOICE", style = HudType.label, color = hud.textDim)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            com.jarvis.launcher.ai.GeminiLive.VOICES.forEach { v -> Chip(v, selected = liveVoice == v) { prefs.setLiveVoice(v) } }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     Text("BRAIN SWITCHBOARD", style = HudType.label, color = hud.textDim)
                     Spacer(Modifier.height(6.dp))
                     val brainMode by prefs.brainMode.collectAsState()
