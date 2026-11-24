@@ -81,6 +81,11 @@ class Prefs(context: Context) {
     val brainMode: StateFlow<String> = _brain.asStateFlow()
     fun setBrainMode(v: String) { _brain.value = v; sp.edit().putString("brain", v).apply() }
 
+    private val _speechLang = MutableStateFlow(sp.getString("speech_lang", "")!!)
+    /** BCP-47 tag for speech recognition/voice ("" = phone default), e.g. "hi-IN", "en-IN". */
+    val speechLanguage: StateFlow<String> = _speechLang.asStateFlow()
+    fun setSpeechLanguage(v: String) { _speechLang.value = v; sp.edit().putString("speech_lang", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }
@@ -145,6 +150,14 @@ class Prefs(context: Context) {
     companion object {
         const val MAX_DOCK = 5
         const val DEFAULT_WAKE = "jarvis"
+
+        /** Language profiles (SONIC-style), English first, then Hindi/Hinglish, then others. */
+        val LANGUAGES = listOf(
+            "" to "Phone default", "en-IN" to "English (India) / Hinglish", "en-GB" to "English (UK)", "en-US" to "English (US)",
+            "hi-IN" to "Hindi", "mr-IN" to "Marathi", "bn-IN" to "Bengali", "gu-IN" to "Gujarati", "ta-IN" to "Tamil",
+            "te-IN" to "Telugu", "kn-IN" to "Kannada", "ml-IN" to "Malayalam", "pa-IN" to "Punjabi", "ur-IN" to "Urdu",
+            "or-IN" to "Odia", "as-IN" to "Assamese", "ne-NP" to "Nepali",
+        )
 
         /** How the wake phrase is shown/said: "Hey Jarvis" for one word, the phrase itself otherwise. */
         fun wakeDisplay(w: String): String {

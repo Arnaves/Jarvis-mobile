@@ -175,6 +175,28 @@ fun SettingsScreen(
                 Spacer(Modifier.height(10.dp))
                 HudField(title, "Or type a name…") { prefs.setUserTitle(it) }
                 Spacer(Modifier.height(10.dp))
+                Text("SPEECH LANGUAGE", style = HudType.label, color = hud.textDim)
+                Spacer(Modifier.height(6.dp))
+                val lang by prefs.speechLanguage.collectAsState()
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.jarvis.launcher.data.Prefs.LANGUAGES.forEach { (tag, name) -> Chip(name, selected = lang == tag) { prefs.setSpeechLanguage(tag) } }
+                }
+                Text(
+                    "Used for voice commands and JARVIS's voice. For best offline results install the language under " +
+                        "Settings › System › Languages › On-device speech recognition.",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(10.dp))
+                HudButton("SET AS DIGITAL ASSISTANT") {
+                    runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS)) }
+                        .onFailure { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }
+                }
+                Text(
+                    "Choose JARVIS under Digital assistant app, then hold the power button (or swipe up from a bottom corner) to summon him. " +
+                        "Add the JARVIS tile to Quick Settings to switch listening on or off.",
+                    style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                )
+                Spacer(Modifier.height(10.dp))
                 val micOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
                 val contactsOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

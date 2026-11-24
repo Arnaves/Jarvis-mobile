@@ -394,7 +394,8 @@ class Assistant(
             append("send a whatsapp to <contact> saying <message> | navigate to <place> | flashlight on | flashlight off | play music | pause music | ")
             append("volume up | volume down | remember <fact> | note for <today/tomorrow/weekday> <text> | ")
             append("read the screen | tap <label> | type <text> | scroll down | scroll up | go back | go home | open notifications | lock the phone | take a screenshot. ")
-            append("Only use ACTION when the user clearly asked for that action.\n")
+            append("Only use ACTION when the user clearly asked for that action. ")
+            append("Reply in the language the user speaks; if they mix Hindi and English in Roman letters (Hinglish), reply the same way.\n")
             append("Current time: $now. Battery: ${s?.batteryPct ?: "?"}%${if (s?.charging == true) " (charging)" else ""}.\n")
             if (notes.isNotEmpty()) {
                 append("The user's saved notes (use them when relevant, e.g. if asked what's planned or what they told you):\n")

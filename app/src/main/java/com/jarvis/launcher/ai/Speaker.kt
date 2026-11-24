@@ -70,6 +70,15 @@ class Speaker(context: Context) {
         if (result != TextToSpeech.SUCCESS) fire(id)
     }
 
+    /** Switch the voice to [tag]'s language (keeps the British voice for English). */
+    fun setLanguage(tag: String) {
+        val t = tts ?: return
+        if (!ready) return
+        if (tag.isBlank() || tag.startsWith("en")) { configure(); return }
+        val loc = java.util.Locale.forLanguageTag(tag)
+        if (t.isLanguageAvailable(loc) >= TextToSpeech.LANG_AVAILABLE) t.language = loc
+    }
+
     fun stop() {
         tts?.stop()
         _speaking.value = false

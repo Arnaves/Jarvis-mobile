@@ -51,7 +51,7 @@ class JarvisApp : Application() {
         monitor = SystemMonitor(this)
         llm = LocalLlm(this)
         speaker = Speaker(this)
-        voice = VoiceInput(this)
+        voice = VoiceInput(this) { prefs.speechLanguage.value }
         val contacts = com.jarvis.launcher.ai.Contacts(this)
         val skills = Skills(this, apps, prefs, monitor, contacts)
         web = WebKnowledge(this)
@@ -63,6 +63,7 @@ class JarvisApp : Application() {
         tasks.executor = { cmd -> assistant.runTask(cmd) }
         tasks.speak = { text -> if (prefs.voiceReplies.value) speaker.speak(text) }
         tasks.rearm()
+        appScope.launch { prefs.speechLanguage.collect { kotlinx.coroutines.delay(1500); speaker.setLanguage(it) } }
         handsFree = HandsFree(this, voice, speaker, assistant, prefs, WakeModelStore(this))
 
         // Bring the neural core online in the background if a model is installed.

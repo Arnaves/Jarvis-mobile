@@ -22,7 +22,7 @@ data class VoiceState(
  * Speech recognition that prefers the on-device recogniser (Android 12+) and
  * otherwise asks the system recogniser to stay offline.
  */
-class VoiceInput(private val context: Context) {
+class VoiceInput(private val context: Context, private val language: () -> String = { "" }) {
     private val _state = MutableStateFlow(VoiceState())
     val state: StateFlow<VoiceState> = _state.asStateFlow()
     private var recognizer: SpeechRecognizer? = null
@@ -120,6 +120,10 @@ class VoiceInput(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+            language().takeIf { it.isNotBlank() }?.let {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, it)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, it)
+            }
         }
         _state.value = VoiceState(listening = true)
         runCatching { r.startListening(intent) }.onFailure {

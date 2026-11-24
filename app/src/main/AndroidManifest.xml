@@ -164,6 +164,37 @@
             </intent-filter>
         </service>
 
+        <!-- Default digital assistant (Settings → Default apps → Digital assistant) -->
+        <service
+            android:name=".assist.JarvisVoiceService"
+            android:exported="true"
+            android:label="JARVIS"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction" />
+            <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
+        </service>
+        <service
+            android:name=".assist.JarvisSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <service
+            android:name=".assist.JarvisRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter><action android:name="android.speech.RecognitionService" /></intent-filter>
+            <meta-data android:name="android.speech" android:resource="@xml/recognition_service" />
+        </service>
+
+        <service
+            android:name=".assist.JarvisTile"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_jarvis"
+            android:label="JARVIS"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
+
         <service
             android:name=".service.JarvisService"
             android:exported="false"
