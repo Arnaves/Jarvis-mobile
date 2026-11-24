@@ -105,6 +105,11 @@ class Prefs(context: Context) {
     val coreStyle: StateFlow<String> = _coreStyle.asStateFlow()
     fun setCoreStyle(v: String) { _coreStyle.value = v; sp.edit().putString("core_style", v).apply() }
 
+    private val _liveInterrupt = MutableStateFlow(sp.getBoolean("live_interrupt", false))
+    /** Let the user talk over JARVIS in Live mode on the loudspeaker (always allowed with headphones). */
+    val liveInterrupt: StateFlow<Boolean> = _liveInterrupt.asStateFlow()
+    fun setLiveInterrupt(v: Boolean) { _liveInterrupt.value = v; sp.edit().putBoolean("live_interrupt", v).apply() }
+
     private val _ownerName = MutableStateFlow(sp.getString("owner", "")!!)
     val ownerName: StateFlow<String> = _ownerName.asStateFlow()
     fun setOwnerName(v: String) { _ownerName.value = v; sp.edit().putString("owner", v).apply() }

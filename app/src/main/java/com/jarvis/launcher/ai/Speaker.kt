@@ -70,6 +70,13 @@ class Speaker(context: Context) {
         if (result != TextToSpeech.SUCCESS) fire(id)
     }
 
+    /** Queues [text] after whatever is already being spoken (used to stream long answers). */
+    fun enqueue(text: String) {
+        val clean = text.replace(Regex("[*_#`>]"), "").replace(Regex("\\s+"), " ").trim()
+        if (!ready || clean.isEmpty()) return
+        tts?.speak(clean, TextToSpeech.QUEUE_ADD, null, "jarvis-${System.nanoTime()}")
+    }
+
     /** Switch the voice to [tag]'s language (keeps the British voice for English). */
     fun setLanguage(tag: String) {
         val t = tts ?: return

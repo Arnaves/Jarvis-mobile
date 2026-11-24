@@ -120,7 +120,7 @@ class Assistant(
             "\nYou are in a live, real-time voice conversation. Keep replies brief and natural. " +
             "For anything the phone should do, call the phone_command tool with a plain-English command, then tell the user the result. " +
             "If the user says goodbye or thanks you and is done, say a short goodbye."
-        live.start(sys, prefs.liveVoice.value, idleTimeoutMs)
+        live.start(sys, prefs.liveVoice.value, idleTimeoutMs, allowBargeIn = if (prefs.liveInterrupt.value) true else null)
     }
 
     fun stopLive() = live.stop()
@@ -283,6 +283,7 @@ class Assistant(
         val id = ids.incrementAndGet()
         add(ChatMessage(id, false, "", streaming = true, source = ChatMessage.Source.NEURAL))
         thinking.value = true
+        val localVoice = SentenceStreamer()
         val sb = StringBuilder()
         try {
             val snippet = if (groundOn != null) web.snippet(groundOn) else null
@@ -290,6 +291,7 @@ class Assistant(
             llm.generate(prompt).collect { delta ->
                 sb.append(delta)
                 update(id, visible(sb.toString()), streaming = true)
+                localVoice.feed(sb.toString(), final = false)
             }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) {
@@ -307,10 +309,13 @@ class Assistant(
         // Let the model drive device actions through the deterministic skill layer.
         val action = Regex("ACTION:\\s*(.+)", RegexOption.IGNORE_CASE).find(full)?.groupValues?.get(1)?.trim()
         val actionReply = action?.let { runCatching { skills.handle(it) }.getOrNull() }
+        localVoice.feed(full, final = true)
         if (actionReply != null) {
-            deliver(actionReply)
-        } else if (prefs.voiceReplies.value) {
-            speaker.speak(answer)
+            if (localVoice.spokeAnything) {
+                add(ChatMessage(ids.incrementAndGet(), false, actionReply.text, source = ChatMessage.Source.SKILL))
+                if (prefs.voiceReplies.value) speaker.enqueue(actionReply.text)
+                runReply(actionReply)
+            } else deliver(actionReply)
         }
     }
 
@@ -324,12 +329,14 @@ class Assistant(
         geminiHistory += GeminiClient.Turn(true, text, image)
         while (geminiHistory.size > 20) geminiHistory.removeAt(0)
         val sb = StringBuilder()
+        val voiceOut = SentenceStreamer()
         var failed: Throwable? = null
         try {
             gemini.stream(systemInstruction(cloud = true, brain = brain), geminiHistory.toList(), grounded && brain != Brain.CODE, think = brain == Brain.THINK)
                 .collect { delta ->
                     sb.append(delta)
                     updateSplit(id, sb.toString(), streaming = true)
+                    voiceOut.feed(Brain.splitThoughts(sb.toString()).second, final = false)
                 }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) {
@@ -371,8 +378,42 @@ class Assistant(
         val answer = visible(answerRaw).ifBlank { "Done." }
         val action = Regex("ACTION:\\s*(.+)", RegexOption.IGNORE_CASE).find(answerRaw)?.groupValues?.get(1)?.trim()
         val actionReply = action?.let { runCatching { skills.handle(it) }.getOrNull() }
-        if (actionReply != null) deliver(actionReply)
-        else if (prefs.voiceReplies.value) speaker.speak(Brain.speakable(answer))
+        voiceOut.feed(answerRaw, final = true)
+        if (actionReply != null) {
+            if (voiceOut.spokeAnything) {
+                // Don't cut off the answer being read out: queue the action's confirmation after it.
+                add(ChatMessage(ids.incrementAndGet(), false, actionReply.text, source = ChatMessage.Source.SKILL))
+                if (prefs.voiceReplies.value) speaker.enqueue(actionReply.text)
+                runReply(actionReply)
+            } else deliver(actionReply)
+        }
+    }
+
+    /**
+     * Speaks a streaming answer sentence by sentence, so the first words come out while the
+     * rest is still arriving. Skips ACTION lines, thoughts and code blocks.
+     */
+    private inner class SentenceStreamer {
+        private var spoken = 0
+        var spokeAnything = false; private set
+
+        fun feed(answerSoFar: String, final: Boolean) {
+            if (!prefs.voiceReplies.value) return
+            var text = visible(answerSoFar)
+            // An unfinished code block shouldn't be read out: cut at its opening fence.
+            if (text.split("```").size % 2 == 0) text = text.substring(0, text.lastIndexOf("```"))
+            val say = Brain.speakable(text)
+            val end = if (final) say.length else {
+                val m = Regex("[.!?।](\\s|$)").findAll(say).lastOrNull() ?: return
+                m.range.first + 1
+            }
+            if (end <= spoken) return
+            val chunk = say.substring(spoken.coerceAtMost(end), end).trim()
+            spoken = end
+            if (chunk.isEmpty()) return
+            if (!spokeAnything) speaker.speak(chunk) else speaker.enqueue(chunk)
+            spokeAnything = true
+        }
     }
 
     private fun updateSplit(id: Long, raw: String, streaming: Boolean) {

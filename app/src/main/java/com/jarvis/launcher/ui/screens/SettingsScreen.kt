@@ -289,6 +289,14 @@ fun SettingsScreen(
                         style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
                     )
                     if (liveOn) {
+                        val interrupt by prefs.liveInterrupt.collectAsState()
+                        Spacer(Modifier.height(6.dp))
+                        ToggleRow("Let me interrupt JARVIS on the loudspeaker", interrupt) { prefs.setLiveInterrupt(it) }
+                        Text(
+                            "With headphones you can always talk over JARVIS. On the loudspeaker this relies on echo cancellation; " +
+                                "turn it off if he starts interrupting himself.",
+                            style = HudType.body.copy(fontSize = 12.sp), color = hud.textDim,
+                        )
                         Spacer(Modifier.height(6.dp))
                         Text("LIVE VOICE", style = HudType.label, color = hud.textDim)
                         Spacer(Modifier.height(6.dp))
