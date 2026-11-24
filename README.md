@@ -155,7 +155,9 @@ You need JDK 17+ and the Android SDK (API 35).
 ./gradlew testDebugUnitTest      # unit tests + Roborazzi UI screenshots → app/screenshots/
 ```
 
-Every push runs GitHub Actions, which uploads the APKs and UI screenshots as build artifacts.
+Every push runs GitHub Actions. The newest app is published as a direct download on the repository's
+**Releases** page (*JARVIS (latest build)* › `JARVIS.apk`), with no GitHub sign-in or unzipping needed.
+APKs and UI screenshots are also kept as build artifacts.
 
 Install with `adb install app/build/outputs/apk/release/app-release.apk`, then press Home and choose **JARVIS**.
 
